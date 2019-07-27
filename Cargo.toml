@@ -1,6 +1,6 @@
 [package]
 name = "file-rotate"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Kevin Robert Stravers <macocio@gmail.com>"]
 edition = "2018"
 description = "Log rotation for files"

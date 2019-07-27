@@ -239,9 +239,9 @@ impl Write for FileRotate {
                         self.rotate()?;
                     }
                 }
-                self.file.as_mut().map(|file| {
-                    let _ = file.write(buf);
-                });
+                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(buf)) {
+                    return Err(err);
+                }
             }
         }
         Ok(written)
