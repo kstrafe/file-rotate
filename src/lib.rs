@@ -21,16 +21,16 @@
 //! let mut log = FileRotate::new("target/my-log-directory-lines/my-log-file", RotationMode::Lines(3), 2);
 //!
 //! // Write a bunch of lines
-//! writeln![log, "Line 1: Hello World!"];
+//! writeln!(log, "Line 1: Hello World!");
 //! for idx in 2..11 {
-//!     writeln![log, "Line {}", idx];
+//!     writeln!(log, "Line {}", idx);
 //! }
 //!
-//! assert_eq!["Line 10\n", fs::read_to_string("target/my-log-directory-lines/my-log-file").unwrap()];
+//! assert_eq!("Line 10\n", fs::read_to_string("target/my-log-directory-lines/my-log-file").unwrap());
 //!
-//! assert_eq!["Line 1: Hello World!\nLine 2\nLine 3\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.0").unwrap()];
-//! assert_eq!["Line 4\nLine 5\nLine 6\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.1").unwrap()];
-//! assert_eq!["Line 7\nLine 8\nLine 9\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.2").unwrap()];
+//! assert_eq!("Line 1: Hello World!\nLine 2\nLine 3\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.0").unwrap());
+//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.1").unwrap());
+//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.2").unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-lines");
 //! ```
@@ -47,10 +47,10 @@
 //!
 //! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", RotationMode::Bytes(5), 2);
 //!
-//! writeln![log, "Test file"];
+//! writeln!(log, "Test file");
 //!
-//! assert_eq!["Test ", fs::read_to_string("target/my-log-directory-bytes/my-log-file.0").unwrap()];
-//! assert_eq!["file\n", fs::read_to_string("target/my-log-directory-bytes/my-log-file").unwrap()];
+//! assert_eq!("Test ", fs::read_to_string("target/my-log-directory-bytes/my-log-file.0").unwrap());
+//! assert_eq!("file\n", fs::read_to_string("target/my-log-directory-bytes/my-log-file").unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-bytes");
 //! ```
@@ -70,39 +70,39 @@
 //!
 //! let mut log = FileRotate::new("target/my-log-directory-small/my-log-file", RotationMode::Bytes(1), 3);
 //!
-//! write![log, "A"];
-//! assert_eq!["A", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "A");
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
-//! write![log, "B"];
-//! assert_eq!["A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap()];
-//! assert_eq!["B", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "B");
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
-//! write![log, "C"];
-//! assert_eq!["A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap()];
-//! assert_eq!["B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap()];
-//! assert_eq!["C", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "C");
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
-//! write![log, "D"];
-//! assert_eq!["A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap()];
-//! assert_eq!["B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap()];
-//! assert_eq!["C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap()];
-//! assert_eq!["D", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "D");
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
+//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
-//! write![log, "E"];
-//! assert_eq!["A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap()];
-//! assert_eq!["B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap()];
-//! assert_eq!["C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap()];
-//! assert_eq!["D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap()];
-//! assert_eq!["E", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "E");
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
+//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap());
+//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //!
 //! // Here we overwrite the 0 file since we're out of log files, restarting the sequencing
-//! write![log, "F"];
-//! assert_eq!["E", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap()];
-//! assert_eq!["B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap()];
-//! assert_eq!["C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap()];
-//! assert_eq!["D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap()];
-//! assert_eq!["F", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap()];
+//! write!(log, "F");
+//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
+//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap());
+//! assert_eq!("F", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-small");
 //! ```
@@ -257,17 +257,17 @@ mod tests {
     #[test]
     fn zero_bytes() {
         let mut rot = FileRotate::new("target/zero_bytes", RotationMode::Bytes(0), 0);
-        writeln![rot, "Zero"].unwrap();
-        assert_eq!["\n", fs::read_to_string("target/zero_bytes").unwrap()];
-        assert_eq!["o", fs::read_to_string("target/zero_bytes.0").unwrap()];
+        writeln!(rot, "Zero").unwrap();
+        assert_eq!("\n", fs::read_to_string("target/zero_bytes").unwrap());
+        assert_eq!("o", fs::read_to_string("target/zero_bytes.0").unwrap());
     }
 
     #[test]
     fn zero_lines() {
         let mut rot = FileRotate::new("target/zero_lines", RotationMode::Lines(0), 0);
-        write![rot, "a\nb\nc\nd\n"].unwrap();
-        assert_eq!["", fs::read_to_string("target/zero_lines").unwrap()];
-        assert_eq!["d\n", fs::read_to_string("target/zero_lines.0").unwrap()];
+        write!(rot, "a\nb\nc\nd\n").unwrap();
+        assert_eq!("", fs::read_to_string("target/zero_lines").unwrap());
+        assert_eq!("d\n", fs::read_to_string("target/zero_lines.0").unwrap());
     }
 
     #[test]
@@ -275,24 +275,24 @@ mod tests {
         let _ = fs::create_dir("target/rotate");
 
         let mut rot = FileRotate::new("target/rotate/log", RotationMode::Lines(0), 0);
-        writeln![rot, "a"].unwrap();
-        assert_eq!["", fs::read_to_string("target/rotate/log").unwrap()];
-        assert_eq!["a\n", fs::read_to_string("target/rotate/log.0").unwrap()];
+        writeln!(rot, "a").unwrap();
+        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
+        assert_eq!("a\n", fs::read_to_string("target/rotate/log.0").unwrap());
 
         fs::remove_dir_all("target/rotate").unwrap();
 
-        assert![writeln![rot, "b"].is_err()];
+        assert!(writeln!(rot, "b").is_err());
 
         rot.flush().unwrap();
 
-        assert![fs::read_dir("target/rotate").is_err()];
+        assert!(fs::read_dir("target/rotate").is_err());
         fs::create_dir("target/rotate").unwrap();
 
-        writeln![rot, "c"].unwrap();
-        assert_eq!["", fs::read_to_string("target/rotate/log").unwrap()];
+        writeln!(rot, "c").unwrap();
+        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
 
-        writeln![rot, "d"].unwrap();
-        assert_eq!["", fs::read_to_string("target/rotate/log").unwrap()];
-        assert_eq!["d\n", fs::read_to_string("target/rotate/log.0").unwrap()];
+        writeln!(rot, "d").unwrap();
+        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
+        assert_eq!("d\n", fs::read_to_string("target/rotate/log.0").unwrap());
     }
 }
