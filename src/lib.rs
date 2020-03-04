@@ -134,15 +134,15 @@ use std::{
 
 // ---
 
-/// Condition on which a file is rotated
+/// Condition on which a file is rotated.
 pub enum RotationMode {
-    /// Cut the log at the exact size in bytes
+    /// Cut the log at the exact size in bytes.
     Bytes(usize),
-    /// Cut the log file at line breaks
+    /// Cut the log file at line breaks.
     Lines(usize),
 }
 
-/// The main writer used for rotating logs
+/// The main writer used for rotating logs.
 pub struct FileRotate {
     basename: PathBuf,
     count: usize,
@@ -153,7 +153,7 @@ pub struct FileRotate {
 }
 
 impl FileRotate {
-    /// Create a new [FileRotate]
+    /// Create a new [FileRotate].
     ///
     /// The basename of the `path` is used to create new log files by appending an extension of the
     /// form `.N`, where N is `0..=max_file_number`.
