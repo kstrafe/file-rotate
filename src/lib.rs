@@ -1,5 +1,7 @@
 //! Write output to a file and rotate the files when limits have been exceeded.
 //!
+//! Defines a simple [std::io::Write] object that you can plug into your writers as middleware.
+//!
 //! # Rotating by Lines #
 //!
 //! We can rotate log files by using the amount of lines as a limit.
@@ -109,7 +111,7 @@
 //!
 //! # Filesystem Errors #
 //!
-//! If the directory containing the logs is deleted or somehow made unaccessible then the rotator
+//! If the directory containing the logs is deleted or somehow made inaccessible then the rotator
 //! will simply continue operating without fault. When a rotation occurs, it attempts to open a
 //! file in the directory. If it can, it will just continue logging. If it can't then the written
 //! date is sent to the void.
