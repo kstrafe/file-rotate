@@ -9,4 +9,6 @@ repository = "https://github.com/BourgondAries/file-rotate"
 keywords= ["log", "rotate", "logrotate"]
 license = "LGPL-3.0-or-later"
 
-[dependencies]
+[dev-dependencies]
+quickcheck = "0.9"
+quickcheck_macros = "0.9"

@@ -283,7 +283,8 @@ mod tests {
 
     #[test]
     fn rotate_to_deleted_directory() {
-        let _ = fs::create_dir("target/rotate");
+        let _ = fs::remove_dir_all("target/rotate");
+        fs::create_dir("target/rotate").unwrap();
 
         let mut rot = FileRotate::new("target/rotate/log", RotationMode::Lines(1), 0);
         writeln!(rot, "a").unwrap();
@@ -295,7 +296,6 @@ mod tests {
         assert!(writeln!(rot, "b").is_err());
 
         rot.flush().unwrap();
-
         assert!(fs::read_dir("target/rotate").is_err());
         fs::create_dir("target/rotate").unwrap();
 
@@ -305,5 +305,45 @@ mod tests {
         writeln!(rot, "d").unwrap();
         assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
         assert_eq!("d\n", fs::read_to_string("target/rotate/log.0").unwrap());
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn arbitrary_lines(count: usize) {
+        let _ = fs::remove_dir_all("target/arbitrary_lines");
+        fs::create_dir("target/arbitrary_lines").unwrap();
+
+        let count = count.max(1);
+        let mut rot = FileRotate::new("target/arbitrary_lines/log", RotationMode::Lines(count), 0);
+
+        for _ in 0..count - 1 {
+            writeln!(rot).unwrap();
+        }
+
+        rot.flush().unwrap();
+        assert!(!Path::new("target/arbitrary_lines/log.0").exists());
+        writeln!(rot).unwrap();
+        assert!(Path::new("target/arbitrary_lines/log.0").exists());
+
+        fs::remove_dir_all("target/arbitrary_lines").unwrap();
+    }
+
+    #[quickcheck_macros::quickcheck]
+    fn arbitrary_bytes() {
+        let _ = fs::remove_dir_all("target/arbitrary_bytes");
+        fs::create_dir("target/arbitrary_bytes").unwrap();
+
+        let count = 0.max(1);
+        let mut rot = FileRotate::new("target/arbitrary_bytes/log", RotationMode::Bytes(count), 0);
+
+        for _ in 0..count {
+            write!(rot, "0").unwrap();
+        }
+
+        rot.flush().unwrap();
+        assert!(!Path::new("target/arbitrary_bytes/log.0").exists());
+        write!(rot, "1").unwrap();
+        assert!(Path::new("target/arbitrary_bytes/log.0").exists());
+
+        fs::remove_dir_all("target/arbitrary_bytes").unwrap();
     }
 }
