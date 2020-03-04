@@ -158,16 +158,23 @@ impl FileRotate {
     /// The basename of the `path` is used to create new log files by appending an extension of the
     /// form `.N`, where N is `0..=max_file_number`.
     ///
-    /// `rotation_mode` specifies the limits for rotating a file. If the rotation mode specifies
-    /// zero bytes or lines, 1 byte or 1 line is assumed.
+    /// `rotation_mode` specifies the limits for rotating a file.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `bytes == 0` or `lines == 0`.
     pub fn new<P: AsRef<Path>>(
         path: P,
         rotation_mode: RotationMode,
         max_file_number: usize,
     ) -> Self {
-        let rotation_mode = match rotation_mode {
-            RotationMode::Bytes(bytes) => RotationMode::Bytes(bytes.max(1)),
-            RotationMode::Lines(lines) => RotationMode::Lines(lines.max(1)),
+        match rotation_mode {
+            RotationMode::Bytes(bytes) => {
+                assert!(bytes > 0);
+            }
+            RotationMode::Lines(lines) => {
+                assert!(lines > 0);
+            }
         };
 
         Self {
@@ -257,6 +264,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "assertion failed: bytes > 0")]
     fn zero_bytes() {
         let mut rot = FileRotate::new("target/zero_bytes", RotationMode::Bytes(0), 0);
         writeln!(rot, "Zero").unwrap();
@@ -265,6 +273,7 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "assertion failed: lines > 0")]
     fn zero_lines() {
         let mut rot = FileRotate::new("target/zero_lines", RotationMode::Lines(0), 0);
         write!(rot, "a\nb\nc\nd\n").unwrap();
@@ -276,7 +285,7 @@ mod tests {
     fn rotate_to_deleted_directory() {
         let _ = fs::create_dir("target/rotate");
 
-        let mut rot = FileRotate::new("target/rotate/log", RotationMode::Lines(0), 0);
+        let mut rot = FileRotate::new("target/rotate/log", RotationMode::Lines(1), 0);
         writeln!(rot, "a").unwrap();
         assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
         assert_eq!("a\n", fs::read_to_string("target/rotate/log.0").unwrap());
