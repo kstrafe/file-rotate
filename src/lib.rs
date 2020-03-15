@@ -10,17 +10,13 @@
 //! use file_rotate::{FileRotate, RotationMode};
 //! use std::{fs, io::Write};
 //!
-//! // Create a directory to store our logs, this is not strictly needed but shows how we can
-//! // arbitrary paths.
-//! fs::create_dir("target/my-log-directory-lines");
-//!
 //! // Create a new log writer. The first argument is anything resembling a path. The
 //! // basename is used for naming the log files.
 //! //
 //! // Here we choose to limit logs by 10 lines, and have at most 2 rotated log files. This
 //! // makes the total amount of log files 4, since the original file is present as well as
 //! // file 0.
-//! let mut log = FileRotate::new("target/my-log-directory-lines/my-log-file", RotationMode::Lines(3), 2, false);
+//! let mut log = FileRotate::new("target/my-log-directory-lines/my-log-file", RotationMode::Lines(3), 2);
 //!
 //! // Write a bunch of lines
 //! writeln!(log, "Line 1: Hello World!");
@@ -30,9 +26,8 @@
 //!
 //! assert_eq!("Line 10\n", fs::read_to_string("target/my-log-directory-lines/my-log-file").unwrap());
 //!
-//! assert_eq!("Line 1: Hello World!\nLine 2\nLine 3\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.0").unwrap());
-//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.1").unwrap());
-//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string("target/my-log-directory-lines/my-log-file.2").unwrap());
+//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
+//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string(&log.log_paths()[1]).unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-lines");
 //! ```
@@ -47,11 +42,11 @@
 //!
 //! fs::create_dir("target/my-log-directory-bytes");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", RotationMode::Bytes(5), 2, false);
+//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", RotationMode::Bytes(5), 2);
 //!
 //! writeln!(log, "Test file");
 //!
-//! assert_eq!("Test ", fs::read_to_string("target/my-log-directory-bytes/my-log-file.0").unwrap());
+//! assert_eq!("Test ", fs::read_to_string(&log.log_paths()[0]).unwrap());
 //! assert_eq!("file\n", fs::read_to_string("target/my-log-directory-bytes/my-log-file").unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-bytes");
@@ -70,31 +65,30 @@
 //!
 //! fs::create_dir("target/my-log-directory-small");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-small/my-log-file", RotationMode::Bytes(1), 3, false);
+//! let mut log = FileRotate::new("target/my-log-directory-small/my-log-file", RotationMode::Bytes(1), 3);
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! write!(log, "B");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
 //! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! write!(log, "C");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
-//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
+//! assert_eq!("B", fs::read_to_string(&log.log_paths()[1]).unwrap());
 //! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! write!(log, "D");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
-//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
-//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
+//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
+//! assert_eq!("B", fs::read_to_string(&log.log_paths()[1]).unwrap());
+//! assert_eq!("C", fs::read_to_string(&log.log_paths()[2]).unwrap());
 //! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! write!(log, "E");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
-//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
-//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
-//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap());
+//! assert_eq!("B", fs::read_to_string(&log.log_paths()[0]).unwrap());
+//! assert_eq!("C", fs::read_to_string(&log.log_paths()[1]).unwrap());
+//! assert_eq!("D", fs::read_to_string(&log.log_paths()[2]).unwrap());
 //! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //!
@@ -102,10 +96,9 @@
 //! // We keep file 0 since this is the initial file. It may contain system startup information we
 //! // do not want to lose.
 //! write!(log, "F");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
-//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
-//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
-//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap());
+//! assert_eq!("C", fs::read_to_string(&log.log_paths()[0]).unwrap());
+//! assert_eq!("D", fs::read_to_string(&log.log_paths()[1]).unwrap());
+//! assert_eq!("E", fs::read_to_string(&log.log_paths()[2]).unwrap());
 //! assert_eq!("F", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //! fs::remove_dir_all("target/my-log-directory-small");
@@ -129,7 +122,6 @@
 )]
 
 use chrono::Local;
-use std::str::FromStr;
 use std::{
     fs::{self, File},
     io::{self, Write},
@@ -151,11 +143,19 @@ pub enum RotationMode {
 /// The main writer used for rotating logs.
 pub struct FileRotate {
     basename: PathBuf,
-    count: usize,
+    log_paths: Vec<PathBuf>,
     file: Option<File>,
-    file_number: usize,
     max_file_number: usize,
     mode: RotationMode,
+    count: usize,
+}
+
+fn create_dir(path: &PathBuf) {
+    if let Some(dirname) = path.parent() {
+        if !dirname.exists() {
+            fs::create_dir_all(dirname).expect("create dir");
+        }
+    }
 }
 
 impl FileRotate {
@@ -169,12 +169,7 @@ impl FileRotate {
     /// # Panics
     ///
     /// Panics if `bytes == 0` or `lines == 0`.
-    pub fn new<P: AsRef<Path>>(
-        path: P,
-        rotation_mode: RotationMode,
-        max_file_number: usize,
-        timestamp_suffix: bool,
-    ) -> Self {
+    pub fn new<P: AsRef<Path>>(path: P, rotation_mode: RotationMode, max_files: usize) -> Self {
         match rotation_mode {
             RotationMode::Bytes(bytes) => {
                 assert!(bytes > 0);
@@ -187,43 +182,60 @@ impl FileRotate {
             }
         };
 
-        let basename = if timestamp_suffix {
-            let p = format!(
-                "{}.{}",
-                path.as_ref().to_string_lossy(),
-                Local::now().format("%Y%m%d%H%M%S")
-            );
-            PathBuf::from_str(&p).expect("invalid path")
-        } else {
-            path.as_ref().to_path_buf()
-        };
+        let basename = path.as_ref().to_path_buf();
+        create_dir(&basename);
 
         Self {
-            count: 0,
+            log_paths: Vec::with_capacity(max_files),
             file: match File::create(&basename) {
                 Ok(file) => Some(file),
                 Err(_) => None,
             },
             basename,
-            file_number: 0,
-            max_file_number,
+            max_file_number: max_files,
             mode: rotation_mode,
+            count: 0,
         }
     }
 
     fn rotate(&mut self) -> io::Result<()> {
-        let mut path = self.basename.clone();
-        path.set_extension(self.file_number.to_string());
+        let mut path = PathBuf::from(format!(
+            "{}-{}",
+            self.basename.to_string_lossy(),
+            Local::now().format("%Y-%m-%dT%H:%M:%S")
+        ));
+
+        let mut counter = 1;
+        while self.log_paths.contains(&path) {
+            path = PathBuf::from(format!(
+                "{}-{}-{}",
+                self.basename.to_string_lossy(),
+                Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                counter
+            ));
+            counter += 1;
+        }
+
+        create_dir(&path);
 
         let _ = self.file.take();
 
-        let _ = fs::rename(&self.basename, path);
+        let _ = fs::rename(&self.basename, &path);
         self.file = Some(File::create(&self.basename)?);
 
-        self.file_number = ((self.file_number + 1) % (self.max_file_number + 1)).max(1);
-        self.count = 0;
+        self.log_paths.push(path);
 
+        while self.log_paths.len() > self.max_file_number {
+            let path_to_remove = self.log_paths.remove(0);
+            let _ = fs::remove_file(path_to_remove);
+        }
+
+        self.count = 0;
         Ok(())
+    }
+    /// Return all log paths. elder first, newer last.
+    pub fn log_paths(&self) -> &[PathBuf] {
+        &self.log_paths
     }
 }
 
@@ -281,10 +293,9 @@ impl Write for FileRotate {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        if let Some(Err(err)) = self.file.as_mut().map(|file| file.flush()) {
-            Err(err)
-        } else {
-            Ok(())
+        match self.file.as_mut().map(|file| file.flush()) {
+            Some(Err(err)) => Err(err),
+            _ => Ok(()),
         }
     }
 }
@@ -294,47 +305,36 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "assertion failed: bytes > 0")]
-    fn zero_bytes() {
-        let mut rot = FileRotate::new("target/zero_bytes", RotationMode::Bytes(0), 0, false);
-        writeln!(rot, "Zero").unwrap();
-        assert_eq!("\n", fs::read_to_string("target/zero_bytes").unwrap());
-        assert_eq!("o", fs::read_to_string("target/zero_bytes.0").unwrap());
-    }
-
-    #[test]
-    #[should_panic(expected = "assertion failed: lines > 0")]
-    fn zero_lines() {
-        let mut rot = FileRotate::new("target/zero_lines", RotationMode::Lines(0), 0, false);
+    fn timestamp_suffix() {
+        let _ = fs::remove_dir_all("target/rotate1");
+        let mut rot = FileRotate::new("target/rotate1/ts-suffix.log", RotationMode::Lines(2), 10);
         write!(rot, "a\nb\nc\nd\n").unwrap();
-        assert_eq!("", fs::read_to_string("target/zero_lines").unwrap());
-        assert_eq!("d\n", fs::read_to_string("target/zero_lines.0").unwrap());
+        assert_eq!("a\nb\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
+        assert_eq!("c\nd\n", fs::read_to_string(&rot.log_paths()[1]).unwrap());
     }
 
     #[test]
     fn rotate_to_deleted_directory() {
-        let _ = fs::remove_dir_all("target/rotate");
-        fs::create_dir("target/rotate").expect("create dir");
+        let _ = fs::remove_dir_all("target/rotate2");
+        fs::create_dir("target/rotate2").expect("create dir");
 
-        let mut rot = FileRotate::new("target/rotate/log", RotationMode::Lines(1), 0, false);
+        let mut rot = FileRotate::new("target/rotate2/log", RotationMode::Lines(1), 1);
         writeln!(rot, "a").expect("write a");
-        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
-        assert_eq!("a\n", fs::read_to_string("target/rotate/log.0").unwrap());
+        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
+        assert_eq!("a\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
 
-        fs::remove_dir_all("target/rotate").unwrap();
+        let _ = fs::remove_dir_all("target/rotate2");
 
-        assert!(writeln!(rot, "b").is_err());
+        assert!(writeln!(rot, "b").is_ok());
 
         rot.flush().unwrap();
-        assert!(fs::read_dir("target/rotate").is_err());
-        fs::create_dir("target/rotate").unwrap();
 
         writeln!(rot, "c").unwrap();
-        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
+        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
 
         writeln!(rot, "d").unwrap();
-        assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
-        assert_eq!("d\n", fs::read_to_string("target/rotate/log.1").unwrap());
+        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
+        assert_eq!("d\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
     }
 
     #[test]
@@ -365,49 +365,38 @@ mod tests {
     #[quickcheck_macros::quickcheck]
     fn arbitrary_lines(count: usize) {
         let _ = fs::remove_dir_all("target/arbitrary_lines");
-        fs::create_dir("target/arbitrary_lines").unwrap();
 
         let count = count.max(1);
-        let mut rot = FileRotate::new(
-            "target/arbitrary_lines/log",
-            RotationMode::Lines(count),
-            0,
-            false,
-        );
+        let mut rot = FileRotate::new("target/arbitrary_lines/log", RotationMode::Lines(count), 1);
 
         for _ in 0..count - 1 {
             writeln!(rot).unwrap();
         }
 
         rot.flush().unwrap();
-        assert!(!Path::new("target/arbitrary_lines/log.0").exists());
+        assert!(rot.log_paths().is_empty());
         writeln!(rot).unwrap();
-        assert!(Path::new("target/arbitrary_lines/log.0").exists());
+        assert!(Path::new(&rot.log_paths()[0]).exists());
 
         fs::remove_dir_all("target/arbitrary_lines").unwrap();
     }
 
     #[quickcheck_macros::quickcheck]
-    fn arbitrary_bytes() {
+    fn arbitrary_bytes(count: usize) {
         let _ = fs::remove_dir_all("target/arbitrary_bytes");
         fs::create_dir("target/arbitrary_bytes").unwrap();
 
-        let count = 0.max(1);
-        let mut rot = FileRotate::new(
-            "target/arbitrary_bytes/log",
-            RotationMode::Bytes(count),
-            0,
-            false,
-        );
+        let count = count.max(1);
+        let mut rot = FileRotate::new("target/arbitrary_bytes/log", RotationMode::Bytes(count), 1);
 
         for _ in 0..count {
             write!(rot, "0").unwrap();
         }
 
         rot.flush().unwrap();
-        assert!(!Path::new("target/arbitrary_bytes/log.0").exists());
+        assert!(rot.log_paths().is_empty());
         write!(rot, "1").unwrap();
-        assert!(Path::new("target/arbitrary_bytes/log.0").exists());
+        assert!(Path::new(&rot.log_paths()[0]).exists());
 
         fs::remove_dir_all("target/arbitrary_bytes").unwrap();
     }
