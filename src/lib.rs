@@ -185,34 +185,42 @@ impl FileRotate {
         let basename = path.as_ref().to_path_buf();
         create_dir(&basename);
 
-        Self {
+        let mut rotater = Self {
             log_paths: Vec::with_capacity(max_files),
-            file: match File::create(&basename) {
-                Ok(file) => Some(file),
-                Err(_) => None,
-            },
+            file: None,
             basename,
             max_file_number: max_files,
             mode: rotation_mode,
             count: 0,
+        };
+
+        let _ = rotater.rotate(true);
+
+        rotater
+    }
+
+    fn new_ts_path(&self, num: Option<usize>) -> PathBuf {
+        match num {
+            None => PathBuf::from(format!(
+                "{}-{}",
+                self.basename.to_string_lossy(),
+                Local::now().format("%Y%m%dT%H%M%S")
+            )),
+            Some(n) => PathBuf::from(format!(
+                "{}-{}-{}",
+                self.basename.to_string_lossy(),
+                Local::now().format("%Y%m%dT%H%M%S"),
+                n
+            )),
         }
     }
 
-    fn rotate(&mut self) -> io::Result<()> {
-        let mut path = PathBuf::from(format!(
-            "{}-{}",
-            self.basename.to_string_lossy(),
-            Local::now().format("%Y-%m-%dT%H:%M:%S")
-        ));
+    fn rotate(&mut self, initial: bool) -> io::Result<()> {
+        let mut path = self.new_ts_path(None);
 
         let mut counter = 1;
         while self.log_paths.contains(&path) {
-            path = PathBuf::from(format!(
-                "{}-{}-{}",
-                self.basename.to_string_lossy(),
-                Local::now().format("%Y-%m-%dT%H:%M:%S"),
-                counter
-            ));
+            path = self.new_ts_path(Some(counter));
             counter += 1;
         }
 
@@ -223,14 +231,16 @@ impl FileRotate {
         let _ = fs::rename(&self.basename, &path);
         self.file = Some(File::create(&self.basename)?);
 
-        self.log_paths.push(path);
+        if !initial {
+            self.log_paths.push(path);
 
-        while self.log_paths.len() > self.max_file_number {
-            let path_to_remove = self.log_paths.remove(0);
-            let _ = fs::remove_file(path_to_remove);
+            while self.log_paths.len() > self.max_file_number {
+                let path_to_remove = self.log_paths.remove(0);
+                let _ = fs::remove_file(path_to_remove);
+            }
         }
-
         self.count = 0;
+
         Ok(())
     }
     /// Return all log paths. elder first, newer last.
@@ -253,7 +263,7 @@ impl Write for FileRotate {
                     {
                         return Err(err);
                     }
-                    self.rotate()?;
+                    self.rotate(false)?;
                     buf = &buf[bytes_left..];
                 }
                 self.count += buf.len();
@@ -272,7 +282,7 @@ impl Write for FileRotate {
                     self.count += 1;
                     buf = &buf[idx + 1..];
                     if self.count >= lines {
-                        self.rotate()?;
+                        self.rotate(false)?;
                     }
                 }
                 if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(buf)) {
