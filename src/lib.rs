@@ -98,10 +98,12 @@
 //! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
 //!
 //!
-//! // Here we overwrite the 0 file since we're out of log files, restarting the sequencing
+//! // Here we overwrite the `1` file since we're out of log files, restarting the sequencing.
+//! // We keep file 0 since this is the initial file. It may contain system startup information we
+//! // do not want to lose.
 //! write!(log, "F");
-//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
-//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
+//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file.0").unwrap());
+//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file.1").unwrap());
 //! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file.2").unwrap());
 //! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file.3").unwrap());
 //! assert_eq!("F", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
@@ -199,7 +201,7 @@ impl FileRotate {
         let _ = fs::rename(&self.basename, path);
         self.file = Some(File::create(&self.basename)?);
 
-        self.file_number = (self.file_number + 1) % (self.max_file_number + 1);
+        self.file_number = ((self.file_number + 1) % (self.max_file_number + 1)).max(1);
         self.count = 0;
 
         Ok(())
@@ -304,7 +306,7 @@ mod tests {
 
         writeln!(rot, "d").unwrap();
         assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
-        assert_eq!("d\n", fs::read_to_string("target/rotate/log.0").unwrap());
+        assert_eq!("d\n", fs::read_to_string("target/rotate/log.1").unwrap());
     }
 
     #[quickcheck_macros::quickcheck]
