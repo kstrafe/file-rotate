@@ -142,6 +142,8 @@ pub enum RotationMode {
     Bytes(usize),
     /// Cut the log file at line breaks.
     Lines(usize),
+    /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
+    BytesSurpassed(usize),
 }
 
 /// The main writer used for rotating logs.
@@ -176,6 +178,9 @@ impl FileRotate {
             }
             RotationMode::Lines(lines) => {
                 assert!(lines > 0);
+            }
+            RotationMode::BytesSurpassed(bytes) => {
+                assert!(bytes > 0);
             }
         };
 
@@ -248,6 +253,15 @@ impl Write for FileRotate {
                     return Err(err);
                 }
             }
+            RotationMode::BytesSurpassed(bytes) => {
+                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(&buf)) {
+                    return Err(err);
+                }
+                self.count += buf.len();
+                if self.count > bytes {
+                    self.rotate()?
+                }
+            }
         }
         Ok(written)
     }
@@ -307,6 +321,31 @@ mod tests {
         writeln!(rot, "d").unwrap();
         assert_eq!("", fs::read_to_string("target/rotate/log").unwrap());
         assert_eq!("d\n", fs::read_to_string("target/rotate/log.1").unwrap());
+    }
+
+    #[test]
+    fn write_complete_record_until_bytes_surpassed() {
+        let _ = fs::remove_dir_all("target/surpassed_bytes");
+        fs::create_dir("target/surpassed_bytes").unwrap();
+
+        let mut rot = FileRotate::new(
+            "target/surpassed_bytes/log",
+            RotationMode::BytesSurpassed(1),
+            1,
+        );
+
+        write!(rot, "0123456789").unwrap();
+        rot.flush().unwrap();
+        assert!(Path::new("target/surpassed_bytes/log.0").exists());
+        // shouldn't exist yet - because entire record was written in one shot
+        assert!(!Path::new("target/surpassed_bytes/log.1").exists());
+
+        // This should create the second file
+        write!(rot, "0123456789").unwrap();
+        rot.flush().unwrap();
+        assert!(Path::new("target/surpassed_bytes/log.1").exists());
+
+        fs::remove_dir_all("target/surpassed_bytes").unwrap();
     }
 
     #[quickcheck_macros::quickcheck]
