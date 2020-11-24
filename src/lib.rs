@@ -173,13 +173,13 @@ impl FileRotate {
         match rotation_mode {
             RotationMode::Bytes(bytes) => {
                 assert!(bytes > 0);
-            },
+            }
             RotationMode::Lines(lines) => {
                 assert!(lines > 0);
-            },
+            }
             RotationMode::BytesSurpassed(bytes) => {
                 assert!(bytes > 0);
-            },
+            }
         };
 
         Self {
@@ -250,13 +250,9 @@ impl Write for FileRotate {
                 if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(buf)) {
                     return Err(err);
                 }
-            },
+            }
             RotationMode::BytesSurpassed(bytes) => {
-                if let Some(Err(err)) = self
-                    .file
-                    .as_mut()
-                    .map(|file| file.write(&buf))
-                {
+                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(&buf)) {
                     return Err(err);
                 }
                 self.count += buf.len();
@@ -330,7 +326,11 @@ mod tests {
         let _ = fs::remove_dir_all("target/surpassed_bytes");
         fs::create_dir("target/surpassed_bytes").unwrap();
 
-        let mut rot = FileRotate::new("target/surpassed_bytes/log", RotationMode::BytesSurpassed(1), 1);
+        let mut rot = FileRotate::new(
+            "target/surpassed_bytes/log",
+            RotationMode::BytesSurpassed(1),
+            1,
+        );
 
         write!(rot, "0123456789").unwrap();
         rot.flush().unwrap();
@@ -385,5 +385,4 @@ mod tests {
 
         fs::remove_dir_all("target/arbitrary_bytes").unwrap();
     }
-
 }
