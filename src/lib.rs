@@ -369,11 +369,11 @@ mod tests {
     }
 
     #[quickcheck_macros::quickcheck]
-    fn arbitrary_bytes() {
+    fn arbitrary_bytes(count: usize) {
         let _ = fs::remove_dir_all("target/arbitrary_bytes");
         fs::create_dir("target/arbitrary_bytes").unwrap();
 
-        let count = 0.max(1);
+        let count = count.max(1);
         let mut rot = FileRotate::new("target/arbitrary_bytes/log", RotationMode::Bytes(count), 0);
 
         for _ in 0..count {
