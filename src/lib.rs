@@ -11,7 +11,7 @@
 //! use std::{fs, io::Write};
 //!
 //! // Create a directory to store our logs, this is not strictly needed but shows how we can
-//! // arbitrary paths.
+//! // use arbitrary paths.
 //! fs::create_dir("target/my-log-directory-lines");
 //!
 //! // Create a new log writer. The first argument is anything resembling a path. The
