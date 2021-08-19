@@ -295,7 +295,7 @@ impl Write for FileRotate {
                 }
                 self.count += buf.len();
                 if self.count > bytes {
-                    self.rotate()?
+                    self.rotate(false)?
                 }
             }
         }
@@ -360,7 +360,7 @@ mod tests {
 
         write!(rot, "0123456789").unwrap();
         rot.flush().unwrap();
-        assert!(Path::new("target/surpassed_bytes/log.0").exists());
+        assert!(Path::new("target/surpassed_bytes/log").exists());
         // shouldn't exist yet - because entire record was written in one shot
         assert!(!Path::new("target/surpassed_bytes/log.1").exists());
 
