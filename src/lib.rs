@@ -243,6 +243,7 @@ impl FileRotate {
 
         Ok(())
     }
+
     /// Return all log paths. elder first, newer last.
     pub fn log_paths(&self) -> &[PathBuf] {
         &self.log_paths
@@ -290,13 +291,13 @@ impl Write for FileRotate {
                 }
             }
             RotationMode::BytesSurpassed(bytes) => {
+                if self.count > bytes {
+                    self.rotate(false)?
+                }
                 if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(&buf)) {
                     return Err(err);
                 }
                 self.count += buf.len();
-                if self.count > bytes {
-                    self.rotate(false)?
-                }
             }
         }
         Ok(written)
@@ -362,12 +363,12 @@ mod tests {
         rot.flush().unwrap();
         assert!(Path::new("target/surpassed_bytes/log").exists());
         // shouldn't exist yet - because entire record was written in one shot
-        assert!(!Path::new("target/surpassed_bytes/log.1").exists());
+        assert!(rot.log_paths().is_empty());
 
         // This should create the second file
         write!(rot, "0123456789").unwrap();
         rot.flush().unwrap();
-        assert!(Path::new("target/surpassed_bytes/log.1").exists());
+        assert!(&rot.log_paths()[0].exists());
 
         fs::remove_dir_all("target/surpassed_bytes").unwrap();
     }
