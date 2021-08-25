@@ -151,6 +151,12 @@
 //! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
 //! ```
 //!
+//! If you use timestamps as suffix, you can also configure files to be removed as they reach a
+//! certain age. For example:
+//! ```rust
+//! TimestampSuffix::default(FileLimit::Age(chrono::Duration::weeks(1)))
+//! ```
+//!
 //! # Filesystem Errors #
 //!
 //! If the directory containing the logs is deleted or somehow made inaccessible then the rotator
