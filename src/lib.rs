@@ -343,9 +343,9 @@ mod tests {
     fn timestamp_max_files_rotation() {
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
         let log_path = tmp_dir.path().join("log");
-        let _ = fs::remove_dir_all(log_path.parent().unwrap());
+
         let mut log = FileRotate::new(
-            &*log_path.to_string_lossy(),
+            &log_path,
             TimestampSuffix::default(FileLimit::MaxFiles(4)),
             ContentLimit::Lines(2),
         );
@@ -382,11 +382,46 @@ mod tests {
         assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
     }
     #[test]
+    #[cfg(feature = "chrono04")]
+    fn timestamp_age_rotation() {
+        // In order not to have to sleep, and keep it deterministic, let's already create the log files and see how FileRotate
+        // cleans up the old ones.
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let dir = tmp_dir.path();
+        let log_path = dir.join("log");
+
+        // One recent file:
+        let recent_file = chrono::offset::Local::now().format("log.%Y%m%dT%H%M%S").to_string();
+        File::create(dir.join(&recent_file)).unwrap();
+        // Two very old files:
+        File::create(dir.join("log.20200825T151133")).unwrap();
+        File::create(dir.join("log.20200825T151133.1")).unwrap();
+
+        let mut log = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            TimestampSuffix::default(FileLimit::Age(chrono::Duration::weeks(1))),
+            ContentLimit::Lines(1),
+        );
+        writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
+
+
+        let mut filenames = std::fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_file())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        filenames.sort();
+        assert!(filenames.contains(&"log".to_string()));
+        assert!(filenames.contains(&recent_file));
+        assert!(!filenames.contains(&"log.20200825T151133".to_string()));
+        assert!(!filenames.contains(&"log.20200825T151133.1".to_string()));
+    }
+    #[test]
     fn count_max_files_rotation() {
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
         let parent = tmp_dir.path();
         let log_path = parent.join("log");
-        let _ = fs::remove_dir_all(log_path.parent().unwrap());
         let mut log = FileRotate::new(
             &*log_path.to_string_lossy(),
             CountSuffix::new(4),
@@ -427,7 +462,6 @@ mod tests {
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
         let parent = tmp_dir.path();
         let log_path = parent.join("log");
-        let _ = fs::remove_dir_all(log_path.parent().unwrap());
         let mut log = FileRotate::new(
             &*log_path.to_string_lossy(),
             CountSuffix::new(4),
@@ -451,18 +485,19 @@ mod tests {
 
     #[test]
     fn write_complete_record_until_bytes_surpassed() {
-        let _ = fs::remove_dir_all("target/surpassed_bytes");
-        fs::create_dir("target/surpassed_bytes").unwrap();
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let dir = tmp_dir.path();
+        let log_path = dir.join("log");
 
         let mut log = FileRotate::new(
-            "target/surpassed_bytes/log",
+            &log_path,
             TimestampSuffix::default(FileLimit::MaxFiles(100)),
             ContentLimit::BytesSurpassed(1),
         );
 
         write!(log, "0123456789").unwrap();
         log.flush().unwrap();
-        assert!(Path::new("target/surpassed_bytes/log").exists());
+        assert!(log_path.exists());
         // shouldn't exist yet - because entire record was written in one shot
         assert!(log.log_paths().is_empty());
 
@@ -470,17 +505,17 @@ mod tests {
         write!(log, "0123456789").unwrap();
         log.flush().unwrap();
         assert!(&log.log_paths()[0].exists());
-
-        fs::remove_dir_all("target/surpassed_bytes").unwrap();
     }
 
     #[quickcheck_macros::quickcheck]
     fn arbitrary_lines(count: usize) {
-        let _ = fs::remove_dir_all("target/arbitrary_lines");
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let dir = tmp_dir.path();
+        let log_path = dir.join("log");
 
         let count = count.max(1);
         let mut log = FileRotate::new(
-            "target/arbitrary_lines/log",
+            &log_path,
             TimestampSuffix::default(FileLimit::MaxFiles(100)),
             ContentLimit::Lines(count),
         );
@@ -493,18 +528,17 @@ mod tests {
         assert!(log.log_paths().is_empty());
         writeln!(log).unwrap();
         assert!(Path::new(&log.log_paths()[0]).exists());
-
-        fs::remove_dir_all("target/arbitrary_lines").unwrap();
     }
 
     #[quickcheck_macros::quickcheck]
     fn arbitrary_bytes(count: usize) {
-        let _ = fs::remove_dir_all("target/arbitrary_bytes");
-        fs::create_dir("target/arbitrary_bytes").unwrap();
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let dir = tmp_dir.path();
+        let log_path = dir.join("log");
 
         let count = count.max(1);
         let mut log = FileRotate::new(
-            "target/arbitrary_bytes/log",
+            &log_path,
             TimestampSuffix::default(FileLimit::MaxFiles(100)),
             ContentLimit::Bytes(count),
         );
@@ -516,8 +550,6 @@ mod tests {
         log.flush().unwrap();
         assert!(log.log_paths().is_empty());
         write!(log, "1").unwrap();
-        assert!(Path::new(&log.log_paths()[0]).exists());
-
-        fs::remove_dir_all("target/arbitrary_bytes").unwrap();
+        assert!(&log.log_paths()[0].exists());
     }
 }

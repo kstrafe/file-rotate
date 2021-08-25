@@ -1,5 +1,6 @@
+use chrono::NaiveDateTime;
 #[cfg(feature = "chrono04")]
-use chrono::{offset::Local, DateTime, Duration};
+use chrono::{offset::Local, Duration};
 use std::{
     collections::VecDeque,
     path::{Path, PathBuf},
@@ -129,8 +130,8 @@ impl TimestampSuffix {
     }
     pub(crate) fn suffix_to_string(&self, suffix: &(String, Option<usize>)) -> String {
         match suffix.1 {
-            Some(n) => format!("{}.{}", Local::now().format(self.format), n),
-            None => Local::now().format(self.format).to_string(),
+            Some(n) => format!("{}.{}", suffix.0, n),
+            None => suffix.0.clone(),
         }
     }
     pub(crate) fn suffix_to_path(
@@ -163,6 +164,7 @@ impl TimestampSuffix {
                 if !filename.starts_with(&filename_prefix) {
                     continue;
                 }
+                // Find the up to two `.` in the filename
                 if let Some(first_dot) = filename.find('.') {
                     let suffix = &filename[(first_dot + 1)..];
                     let (timestamp_str, n) = if let Some(second_dot) = suffix.find('.') {
@@ -174,7 +176,7 @@ impl TimestampSuffix {
                     } else {
                         (suffix, None)
                     };
-                    if DateTime::parse_from_str(timestamp_str, self.format).is_ok() {
+                    if NaiveDateTime::parse_from_str(timestamp_str, self.format).is_ok() {
                         suffixes.push_back((timestamp_str.to_string(), n))
                     }
                 } else {
@@ -241,8 +243,7 @@ impl SuffixScheme for TimestampSuffix {
 
         // Delete respective entries
         for _ in 0..to_delete {
-            let x = self.suffixes.as_mut().unwrap().pop_front();
-            println!("DELETE FILE {:?}", x);
+            self.suffixes.as_mut().unwrap().pop_front();
         }
 
         self.suffix_to_string(&(now, n))
