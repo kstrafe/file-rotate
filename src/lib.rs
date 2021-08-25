@@ -275,21 +275,21 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
                 while self.count + buf.len() > bytes {
                     let bytes_left = bytes - self.count;
                     if let Some(ref mut file) = self.file {
-                        file.write(&buf[..bytes_left])?;
+                        file.write_all(&buf[..bytes_left])?;
                     }
                     self.rotate()?;
                     buf = &buf[bytes_left..];
                 }
                 self.count += buf.len();
                 if let Some(ref mut file) = self.file {
-                    file.write(&buf[..])?;
+                    file.write_all(&buf)?;
                 }
             }
             ContentLimit::Lines(lines) => {
                 while let Some((idx, _)) = buf.iter().enumerate().find(|(_, byte)| *byte == &b'\n')
                 {
                     if let Some(ref mut file) = self.file {
-                        file.write(&buf[..idx + 1])?;
+                        file.write_all(&buf[..idx + 1])?;
                     }
                     self.count += 1;
                     buf = &buf[idx + 1..];
@@ -298,7 +298,7 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
                     }
                 }
                 if let Some(ref mut file) = self.file {
-                    file.write(buf)?;
+                    file.write_all(buf)?;
                 }
             }
             ContentLimit::BytesSurpassed(bytes) => {
@@ -306,7 +306,7 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
                     self.rotate()?
                 }
                 if let Some(ref mut file) = self.file {
-                    file.write(&buf)?;
+                    file.write_all(&buf)?;
                 }
                 self.count += buf.len();
             }
