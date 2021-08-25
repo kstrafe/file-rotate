@@ -1,3 +1,4 @@
+#[cfg(feature = "chrono04")]
 use chrono::{offset::Local, DateTime, Duration};
 use std::{
     collections::VecDeque,
@@ -92,6 +93,7 @@ impl SuffixScheme for CountSuffix {
 /// Current limitations:
 ///  - Neither `format` or the base filename can include the character `"."`.
 ///  - The `format` should ensure that the lexical and chronological orderings are the same
+#[cfg(feature = "chrono04")]
 pub struct TimestampSuffix {
     /// None means that we don't know the files, and a scan is necessary.
     pub(crate) suffixes: Option<VecDeque<(String, Option<usize>)>>,
@@ -99,6 +101,7 @@ pub struct TimestampSuffix {
     file_limit: FileLimit,
 }
 
+#[cfg(feature = "chrono04")]
 impl TimestampSuffix {
     /// With format `"%Y%m%dT%H%M%S"`
     pub fn default(file_limit: FileLimit) -> Self {
@@ -186,6 +189,7 @@ impl TimestampSuffix {
         }
     }
 }
+#[cfg(feature = "chrono04")]
 impl SuffixScheme for TimestampSuffix {
     fn rotate(&mut self, basepath: &Path) -> String {
         let now = Local::now().format(self.format).to_string();
@@ -261,6 +265,7 @@ impl SuffixScheme for TimestampSuffix {
 }
 
 /// How to determine if a file should be deleted, in the case of TimestampSuffix.
+#[cfg(feature = "chrono04")]
 pub enum FileLimit {
     /// Delete the oldest files if number of files is too high
     MaxFiles(usize),
