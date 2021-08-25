@@ -2,21 +2,29 @@
 //!
 //! Defines a simple [std::io::Write] object that you can plug into your writers as middleware.
 //!
-//! # Rotating by Lines #
+//! # Content limit #
 //!
-//! We can rotate log files by using the amount of lines as a limit.
+//! Content limit specifies at what point a log file has to be rotated.
+//!
+//! ## Rotating by Lines ##
+//!
+//! We can rotate log files with the amount of lines as a limit, by using `ContentLimit::Lines`.
 //!
 //! ```
-//! use file_rotate::{FileRotate, RotationMode};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
 //! use std::{fs, io::Write};
 //!
 //! // Create a new log writer. The first argument is anything resembling a path. The
 //! // basename is used for naming the log files.
 //! //
 //! // Here we choose to limit logs by 10 lines, and have at most 2 rotated log files. This
-//! // makes the total amount of log files 4, since the original file is present as well as
-//! // file 0.
-//! let mut log = FileRotate::new("target/my-log-directory-lines/my-log-file", RotationMode::Lines(3), 2);
+//! // makes the total amount of log files 3, since the original file is present as well.
+//!
+//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = directory.path();
+//! let log_path = directory.join("my-log-file");
+//!
+//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(2), ContentLimit::Lines(3));
 //!
 //! // Write a bunch of lines
 //! writeln!(log, "Line 1: Hello World!");
@@ -24,25 +32,25 @@
 //!     writeln!(log, "Line {}", idx);
 //! }
 //!
-//! assert_eq!("Line 10\n", fs::read_to_string("target/my-log-directory-lines/my-log-file").unwrap());
+//! assert_eq!("Line 10\n", fs::read_to_string(&log_path).unwrap());
 //!
-//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//!
-//! fs::remove_dir_all("target/my-log-directory-lines");
+//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string(&directory.join("my-log-file.2")).unwrap());
+//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string(&directory.join("my-log-file.1")).unwrap());
 //! ```
 //!
-//! # Rotating by Bytes #
+//! ## Rotating by Bytes ##
 //!
-//! Another method of rotation is by bytes instead of lines.
+//! Another method of rotation is by bytes instead of lines, with `ContentLimit::Bytes`.
 //!
 //! ```
-//! use file_rotate::{FileRotate, RotationMode};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
 //! use std::{fs, io::Write};
 //!
-//! fs::create_dir("target/my-log-directory-bytes");
+//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = directory.path();
+//! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", RotationMode::Bytes(5), 2);
+//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", CountSuffix::new(2), ContentLimit::Bytes(5));
 //!
 //! writeln!(log, "Test file");
 //!
@@ -54,54 +62,93 @@
 //!
 //! # Rotation Method #
 //!
-//! The rotation method used is to always write to the base path, and then move the file to a new
-//! location when the limit is exceeded. The moving occurs in the sequence 0, 1, 2, n, 0, 1, 2...
+//! Two rotation methods are provided, but any behaviour can be implemented with the `SuffixScheme`
+//! trait.
+//!
+//! ## Basic count ##
+//!
+//! With `CountSuffix`, when the limit is reached in the main log file, the file is moved with
+//! suffix `.1`, and subsequently numbered files are moved in a cascade.
 //!
 //! Here's an example with 1 byte limits:
 //!
 //! ```
-//! use file_rotate::{FileRotate, RotationMode};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
 //! use std::{fs, io::Write};
 //!
-//! fs::create_dir("target/my-log-directory-small");
+//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = directory.path();
+//! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-small/my-log-file", RotationMode::Bytes(1), 3);
+//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(3), ContentLimit::Bytes(1));
 //!
 //! write!(log, "A");
-//! assert_eq!("A", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
+//! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
+//!
+//! write!(log, "B");
+//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
+//! assert_eq!("B", fs::read_to_string(&log_path).unwrap());
+//!
+//! write!(log, "C");
+//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
+//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
+//! assert_eq!("C", fs::read_to_string(&log_path).unwrap());
+//!
+//! write!(log, "D");
+//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.3")).unwrap());
+//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
+//! assert_eq!("C", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
+//! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
+//!
+//! write!(log, "E");
+//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.3")).unwrap());
+//! assert_eq!("C", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
+//! assert_eq!("D", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
+//! assert_eq!("E", fs::read_to_string(&log_path).unwrap());
+//! ```
+//!
+//! ## Timestamp suffix ##
+//!
+//! With `TimestampSuffix`, when the limit is reached in the main log file, the file is moved with
+//! suffix equal to the current timestamp (with the specified or a default format). If the
+//! destination file name already exists, `.1` (and up) is appended.
+//!
+//! Note that this works somewhat different to `CountSuffix` because of lexical ordering concerns:
+//! Higher numbers mean more recent logs, whereas `CountSuffix` works in the opposite way.
+//! The reason for this is to keep the lexical ordering of log names consistent: Higher lexical value
+//! means more recent.
+//! This is of course all assuming that the format start with the year (or most significant
+//! component).
+//!
+//! With this suffix scheme, you can also decide whether to delete old files based on the age of
+//! their timestamp (`FileLimit::Age`), or just maximum number of files (`FileLimit::MaxFiles`).
+//!
+//! ```
+//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffix, FileLimit}};
+//! use std::{fs, io::Write};
+//!
+//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = directory.path();
+//! let log_path = directory.join("my-log-file");
+//!
+//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffix::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1));
+//!
+//! write!(log, "A");
+//! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
 //!
 //! write!(log, "B");
 //! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("B", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
+//! assert_eq!("B", fs::read_to_string(&log_path).unwrap());
 //!
 //! write!(log, "C");
 //! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
 //! assert_eq!("B", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("C", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
+//! assert_eq!("C", fs::read_to_string(&log_path).unwrap());
 //!
 //! write!(log, "D");
-//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("B", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("C", fs::read_to_string(&log.log_paths()[2]).unwrap());
-//! assert_eq!("D", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
-//!
-//! write!(log, "E");
 //! assert_eq!("B", fs::read_to_string(&log.log_paths()[0]).unwrap());
 //! assert_eq!("C", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("D", fs::read_to_string(&log.log_paths()[2]).unwrap());
-//! assert_eq!("E", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
-//!
-//!
-//! // Here we overwrite the `1` file since we're out of log files, restarting the sequencing.
-//! // We keep file 0 since this is the initial file. It may contain system startup information we
-//! // do not want to lose.
-//! write!(log, "F");
-//! assert_eq!("C", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("D", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("E", fs::read_to_string(&log.log_paths()[2]).unwrap());
-//! assert_eq!("F", fs::read_to_string("target/my-log-directory-small/my-log-file").unwrap());
-//!
-//! fs::remove_dir_all("target/my-log-directory-small");
+//! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
 //! ```
 //!
 //! # Filesystem Errors #
@@ -112,6 +159,7 @@
 //! date is sent to the void.
 //!
 //! This logger never panics.
+
 #![deny(
     missing_docs,
     trivial_casts,
@@ -121,36 +169,39 @@
     unused_qualifications
 )]
 
-use chrono::Local;
 use std::{
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
 };
 
+/// Suffix scheme etc
+pub mod suffix;
+
 // ---
 
-/// Condition on which a file is rotated.
-pub enum RotationMode {
+/// When to move files: Condition on which a file is rotated.
+pub enum ContentLimit {
     /// Cut the log at the exact size in bytes.
     Bytes(usize),
     /// Cut the log file at line breaks.
     Lines(usize),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
+    // TODO: Custom(Fn(suffix: &str) -> bool)
+    // Which can be used to test age in case of timestamps.
 }
 
 /// The main writer used for rotating logs.
-pub struct FileRotate {
-    basename: PathBuf,
-    log_paths: Vec<PathBuf>,
+pub struct FileRotate<S> {
+    basepath: PathBuf,
     file: Option<File>,
-    max_file_number: usize,
-    mode: RotationMode,
+    content_limit: ContentLimit,
     count: usize,
+    suffix_scheme: S,
 }
 
-fn create_dir(path: &PathBuf) {
+fn create_parent_dir(path: &Path) {
     if let Some(dirname) = path.parent() {
         if !dirname.exists() {
             fs::create_dir_all(dirname).expect("create dir");
@@ -158,144 +209,104 @@ fn create_dir(path: &PathBuf) {
     }
 }
 
-impl FileRotate {
+impl<S: suffix::SuffixScheme> FileRotate<S> {
     /// Create a new [FileRotate].
     ///
     /// The basename of the `path` is used to create new log files by appending an extension of the
-    /// form `.N`, where N is `0..=max_file_number`.
+    /// form `.N`, where N is `0..=max_files`.
     ///
-    /// `rotation_mode` specifies the limits for rotating a file.
+    /// `content_limit` specifies the limits for rotating a file.
     ///
     /// # Panics
     ///
     /// Panics if `bytes == 0` or `lines == 0`.
-    pub fn new<P: AsRef<Path>>(path: P, rotation_mode: RotationMode, max_files: usize) -> Self {
-        match rotation_mode {
-            RotationMode::Bytes(bytes) => {
+    pub fn new<P: AsRef<Path>>(path: P, suffix_scheme: S, content_limit: ContentLimit) -> Self {
+        match content_limit {
+            ContentLimit::Bytes(bytes) => {
                 assert!(bytes > 0);
             }
-            RotationMode::Lines(lines) => {
+            ContentLimit::Lines(lines) => {
                 assert!(lines > 0);
             }
-            RotationMode::BytesSurpassed(bytes) => {
+            ContentLimit::BytesSurpassed(bytes) => {
                 assert!(bytes > 0);
             }
         };
 
-        let basename = path.as_ref().to_path_buf();
-        create_dir(&basename);
+        let basepath = path.as_ref().to_path_buf();
+        create_parent_dir(&basepath);
 
-        let mut rotater = Self {
-            log_paths: Vec::with_capacity(max_files),
-            file: None,
-            basename,
-            max_file_number: max_files,
-            mode: rotation_mode,
+        Self {
+            file: File::create(&basepath).ok(),
+            basepath,
+            content_limit,
             count: 0,
-        };
-
-        let _ = rotater.rotate(true);
-
-        rotater
-    }
-
-    fn new_ts_path(&self, num: Option<usize>) -> PathBuf {
-        match num {
-            None => PathBuf::from(format!(
-                "{}-{}",
-                self.basename.to_string_lossy(),
-                Local::now().format("%Y%m%dT%H%M%S")
-            )),
-            Some(n) => PathBuf::from(format!(
-                "{}-{}-{}",
-                self.basename.to_string_lossy(),
-                Local::now().format("%Y%m%dT%H%M%S"),
-                n
-            )),
+            suffix_scheme,
         }
     }
+    /// Get paths of rotated log files (excluding the original/current log file)
+    pub fn log_paths(&mut self) -> Vec<PathBuf> {
+        self.suffix_scheme.log_paths(&self.basepath)
+    }
 
-    fn rotate(&mut self, initial: bool) -> io::Result<()> {
-        let mut path = self.new_ts_path(None);
+    fn rotate(&mut self) -> io::Result<()> {
+        let suffix = self.suffix_scheme.rotate(&self.basepath);
+        let path = PathBuf::from(format!("{}.{}", self.basepath.display(), suffix));
 
-        let mut counter = 1;
-        while self.log_paths.contains(&path) {
-            path = self.new_ts_path(Some(counter));
-            counter += 1;
-        }
-
-        create_dir(&path);
+        create_parent_dir(&path);
 
         let _ = self.file.take();
 
-        let _ = fs::rename(&self.basename, &path);
-        self.file = Some(File::create(&self.basename)?);
+        // TODO should handle this error (and others)
+        let _ = fs::rename(&self.basepath, &path);
 
-        if !initial {
-            self.log_paths.push(path);
-
-            while self.log_paths.len() > self.max_file_number {
-                let path_to_remove = self.log_paths.remove(0);
-                let _ = fs::remove_file(path_to_remove);
-            }
-        }
+        self.file = Some(File::create(&self.basepath)?);
         self.count = 0;
 
         Ok(())
     }
-
-    /// Return all log paths. elder first, newer last.
-    pub fn log_paths(&self) -> &[PathBuf] {
-        &self.log_paths
-    }
 }
 
-impl Write for FileRotate {
+impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         let written = buf.len();
-        match self.mode {
-            RotationMode::Bytes(bytes) => {
+        match self.content_limit {
+            ContentLimit::Bytes(bytes) => {
                 while self.count + buf.len() > bytes {
                     let bytes_left = bytes - self.count;
-                    if let Some(Err(err)) = self
-                        .file
-                        .as_mut()
-                        .map(|file| file.write(&buf[..bytes_left]))
-                    {
-                        return Err(err);
+                    if let Some(ref mut file) = self.file {
+                        file.write(&buf[..bytes_left])?;
                     }
-                    self.rotate(false)?;
+                    self.rotate()?;
                     buf = &buf[bytes_left..];
                 }
                 self.count += buf.len();
-                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(&buf[..])) {
-                    return Err(err);
+                if let Some(ref mut file) = self.file {
+                    file.write(&buf[..])?;
                 }
             }
-            RotationMode::Lines(lines) => {
+            ContentLimit::Lines(lines) => {
                 while let Some((idx, _)) = buf.iter().enumerate().find(|(_, byte)| *byte == &b'\n')
                 {
-                    if let Some(Err(err)) =
-                        self.file.as_mut().map(|file| file.write(&buf[..idx + 1]))
-                    {
-                        return Err(err);
+                    if let Some(ref mut file) = self.file {
+                        file.write(&buf[..idx + 1])?;
                     }
                     self.count += 1;
                     buf = &buf[idx + 1..];
                     if self.count >= lines {
-                        self.rotate(false)?;
+                        self.rotate()?;
                     }
                 }
-                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(buf)) {
-                    return Err(err);
+                if let Some(ref mut file) = self.file {
+                    file.write(buf)?;
                 }
             }
-            RotationMode::BytesSurpassed(bytes) => {
+            ContentLimit::BytesSurpassed(bytes) => {
                 if self.count > bytes {
-                    self.rotate(false)?
+                    self.rotate()?
                 }
-                if let Some(Err(err)) = self.file.as_mut().map(|file| file.write(&buf)) {
-                    return Err(err);
+                if let Some(ref mut file) = self.file {
+                    file.write(&buf)?;
                 }
                 self.count += buf.len();
             }
@@ -304,48 +315,138 @@ impl Write for FileRotate {
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        match self.file.as_mut().map(|file| file.flush()) {
-            Some(Err(err)) => Err(err),
-            _ => Ok(()),
-        }
+        self.file
+            .as_mut()
+            .map(|file| file.flush())
+            .unwrap_or(Ok(()))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{suffix::*, *};
+    use tempdir::TempDir;
+
+    // Just useful to debug why test doesn't succeed
+    #[allow(dead_code)]
+    fn list(dir: &Path) {
+        let filenames = fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_file())
+            .map(|entry| entry.file_name())
+            .collect::<Vec<_>>();
+        println!("Files on disk: {:?}", filenames);
+    }
 
     #[test]
-    fn timestamp_suffix() {
-        let _ = fs::remove_dir_all("target/rotate1");
-        let mut rot = FileRotate::new("target/rotate1/ts-suffix.log", RotationMode::Lines(2), 10);
-        write!(rot, "a\nb\nc\nd\n").unwrap();
-        assert_eq!("a\nb\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
-        assert_eq!("c\nd\n", fs::read_to_string(&rot.log_paths()[1]).unwrap());
+    fn timestamp_max_files_rotation() {
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let log_path = tmp_dir.path().join("log");
+        let _ = fs::remove_dir_all(log_path.parent().unwrap());
+        let mut log = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            TimestampSuffix::default(FileLimit::MaxFiles(4)),
+            ContentLimit::Lines(2),
+        );
+
+        // Write 9 lines
+        // This should result in 5 files in total (4 rotated files). The main file will have one line.
+        write!(log, "a\nb\nc\nd\ne\nf\ng\nh\ni\n").unwrap();
+        let log_paths = log.log_paths();
+        assert_eq!(log_paths.len(), 4);
+
+        // Log names should be sorted. Low (old timestamp) to high (more recent timestamp)
+        let mut log_paths_sorted = log_paths.clone();
+        log_paths_sorted.sort();
+        assert_eq!(log_paths, log_paths_sorted);
+
+        assert_eq!("a\nb\n", fs::read_to_string(&log_paths[0]).unwrap());
+        assert_eq!("c\nd\n", fs::read_to_string(&log_paths[1]).unwrap());
+        assert_eq!("e\nf\n", fs::read_to_string(&log_paths[2]).unwrap());
+        assert_eq!("g\nh\n", fs::read_to_string(&log_paths[3]).unwrap());
+        assert_eq!("i\n", fs::read_to_string(&log_path).unwrap());
+
+        // Write 4 more lines
+        write!(log, "j\nk\nl\nm\n").unwrap();
+        let log_paths = log.log_paths();
+        assert_eq!(log_paths.len(), 4);
+        let mut log_paths_sorted = log_paths.clone();
+        log_paths_sorted.sort();
+        assert_eq!(log_paths, log_paths_sorted);
+
+        assert_eq!("e\nf\n", fs::read_to_string(&log_paths[0]).unwrap());
+        assert_eq!("g\nh\n", fs::read_to_string(&log_paths[1]).unwrap());
+        assert_eq!("i\nj\n", fs::read_to_string(&log_paths[2]).unwrap());
+        assert_eq!("k\nl\n", fs::read_to_string(&log_paths[3]).unwrap());
+        assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
+    }
+    #[test]
+    fn count_max_files_rotation() {
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let parent = tmp_dir.path();
+        let log_path = parent.join("log");
+        let _ = fs::remove_dir_all(log_path.parent().unwrap());
+        let mut log = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            CountSuffix::new(4),
+            ContentLimit::Lines(2),
+        );
+
+        // Write 9 lines
+        // This should result in 5 files in total (4 rotated files). The main file will have one line.
+        write!(log, "a\nb\nc\nd\ne\nf\ng\nh\ni\n").unwrap(); // 9 lines
+        let log_paths = vec![
+            parent.join("log.4"),
+            parent.join("log.3"),
+            parent.join("log.2"),
+            parent.join("log.1"),
+        ];
+        assert_eq!(log_paths, log.log_paths());
+        assert_eq!("a\nb\n", fs::read_to_string(&log_paths[0]).unwrap());
+        assert_eq!("c\nd\n", fs::read_to_string(&log_paths[1]).unwrap());
+        assert_eq!("e\nf\n", fs::read_to_string(&log_paths[2]).unwrap());
+        assert_eq!("g\nh\n", fs::read_to_string(&log_paths[3]).unwrap());
+        assert_eq!("i\n", fs::read_to_string(&log_path).unwrap());
+
+        // Write 4 more lines
+        write!(log, "j\nk\nl\nm\n").unwrap();
+        list(parent);
+        assert_eq!(log_paths, log.log_paths());
+
+        assert_eq!("e\nf\n", fs::read_to_string(&log_paths[0]).unwrap());
+        assert_eq!("g\nh\n", fs::read_to_string(&log_paths[1]).unwrap());
+        assert_eq!("i\nj\n", fs::read_to_string(&log_paths[2]).unwrap());
+        assert_eq!("k\nl\n", fs::read_to_string(&log_paths[3]).unwrap());
+        assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
     }
 
     #[test]
     fn rotate_to_deleted_directory() {
-        let _ = fs::remove_dir_all("target/rotate2");
-        fs::create_dir("target/rotate2").expect("create dir");
+        // NOTE: Only supported with count, not with timestamp suffix.
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let parent = tmp_dir.path();
+        let log_path = parent.join("log");
+        let _ = fs::remove_dir_all(log_path.parent().unwrap());
+        let mut log = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            CountSuffix::new(4),
+            ContentLimit::Lines(1),
+        );
 
-        let mut rot = FileRotate::new("target/rotate2/log", RotationMode::Lines(1), 1);
-        writeln!(rot, "a").expect("write a");
-        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
-        assert_eq!("a\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
+        write!(log, "a\nb\n").unwrap();
+        assert_eq!("", fs::read_to_string(&log_path).unwrap());
+        assert_eq!("a\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
 
-        let _ = fs::remove_dir_all("target/rotate2");
+        let _ = fs::remove_dir_all(parent);
 
-        assert!(writeln!(rot, "b").is_ok());
+        assert!(writeln!(log, "c").is_ok());
 
-        rot.flush().unwrap();
+        log.flush().unwrap();
 
-        writeln!(rot, "c").unwrap();
-        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
-
-        writeln!(rot, "d").unwrap();
-        assert_eq!("", fs::read_to_string("target/rotate2/log").unwrap());
-        assert_eq!("d\n", fs::read_to_string(&rot.log_paths()[0]).unwrap());
+        writeln!(log, "d").unwrap();
+        assert_eq!("", fs::read_to_string(&log_path).unwrap());
+        assert_eq!("d\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
     }
 
     #[test]
@@ -353,22 +454,22 @@ mod tests {
         let _ = fs::remove_dir_all("target/surpassed_bytes");
         fs::create_dir("target/surpassed_bytes").unwrap();
 
-        let mut rot = FileRotate::new(
+        let mut log = FileRotate::new(
             "target/surpassed_bytes/log",
-            RotationMode::BytesSurpassed(1),
-            1,
+            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            ContentLimit::BytesSurpassed(1),
         );
 
-        write!(rot, "0123456789").unwrap();
-        rot.flush().unwrap();
+        write!(log, "0123456789").unwrap();
+        log.flush().unwrap();
         assert!(Path::new("target/surpassed_bytes/log").exists());
         // shouldn't exist yet - because entire record was written in one shot
-        assert!(rot.log_paths().is_empty());
+        assert!(log.log_paths().is_empty());
 
         // This should create the second file
-        write!(rot, "0123456789").unwrap();
-        rot.flush().unwrap();
-        assert!(&rot.log_paths()[0].exists());
+        write!(log, "0123456789").unwrap();
+        log.flush().unwrap();
+        assert!(&log.log_paths()[0].exists());
 
         fs::remove_dir_all("target/surpassed_bytes").unwrap();
     }
@@ -378,16 +479,20 @@ mod tests {
         let _ = fs::remove_dir_all("target/arbitrary_lines");
 
         let count = count.max(1);
-        let mut rot = FileRotate::new("target/arbitrary_lines/log", RotationMode::Lines(count), 1);
+        let mut log = FileRotate::new(
+            "target/arbitrary_lines/log",
+            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            ContentLimit::Lines(count),
+        );
 
         for _ in 0..count - 1 {
-            writeln!(rot).unwrap();
+            writeln!(log).unwrap();
         }
 
-        rot.flush().unwrap();
-        assert!(rot.log_paths().is_empty());
-        writeln!(rot).unwrap();
-        assert!(Path::new(&rot.log_paths()[0]).exists());
+        log.flush().unwrap();
+        assert!(log.log_paths().is_empty());
+        writeln!(log).unwrap();
+        assert!(Path::new(&log.log_paths()[0]).exists());
 
         fs::remove_dir_all("target/arbitrary_lines").unwrap();
     }
@@ -398,16 +503,20 @@ mod tests {
         fs::create_dir("target/arbitrary_bytes").unwrap();
 
         let count = count.max(1);
-        let mut rot = FileRotate::new("target/arbitrary_bytes/log", RotationMode::Bytes(count), 1);
+        let mut log = FileRotate::new(
+            "target/arbitrary_bytes/log",
+            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            ContentLimit::Bytes(count),
+        );
 
         for _ in 0..count {
-            write!(rot, "0").unwrap();
+            write!(log, "0").unwrap();
         }
 
-        rot.flush().unwrap();
-        assert!(rot.log_paths().is_empty());
-        write!(rot, "1").unwrap();
-        assert!(Path::new(&rot.log_paths()[0]).exists());
+        log.flush().unwrap();
+        assert!(log.log_paths().is_empty());
+        write!(log, "1").unwrap();
+        assert!(Path::new(&log.log_paths()[0]).exists());
 
         fs::remove_dir_all("target/arbitrary_bytes").unwrap();
     }
