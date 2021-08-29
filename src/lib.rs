@@ -124,14 +124,14 @@
 //! their timestamp (`FileLimit::Age`), or just maximum number of files (`FileLimit::MaxFiles`).
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffix, FileLimit}};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffixScheme, FileLimit}};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffix::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1));
+//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffixScheme::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1));
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
@@ -154,7 +154,8 @@
 //! If you use timestamps as suffix, you can also configure files to be removed as they reach a
 //! certain age. For example:
 //! ```rust
-//! TimestampSuffix::default(FileLimit::Age(chrono::Duration::weeks(1)))
+//! use file_rotate::suffix::{TimestampSuffixScheme, FileLimit};
+//! TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1)));
 //! ```
 //!
 //! # Filesystem Errors #
@@ -176,10 +177,13 @@
 )]
 
 use std::{
+    cmp::Ordering,
+    collections::BTreeSet,
     fs::{self, File},
     io::{self, Write},
     path::{Path, PathBuf},
 };
+use suffix::Representation;
 
 /// Suffix scheme etc
 pub mod suffix;
@@ -194,17 +198,45 @@ pub enum ContentLimit {
     Lines(usize),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
-    // TODO: Custom(Fn(suffix: &str) -> bool)
-    // Which can be used to test age in case of timestamps.
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SuffixInfo<Repr> {
+    pub suffix: Repr,
+    pub compressed: bool,
+}
+
+impl<Repr: Representation> SuffixInfo<Repr> {
+    pub fn to_path(&self, basepath: &Path) -> PathBuf {
+        let path = self.suffix.to_path(basepath);
+        if self.compressed {
+            PathBuf::from(format!("{}.tar.gz", path.display()))
+        } else {
+            path
+        }
+    }
+}
+
+impl<Repr: Representation> Ord for SuffixInfo<Repr> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.suffix.cmp(&other.suffix)
+    }
+}
+impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 /// The main writer used for rotating logs.
-pub struct FileRotate<S> {
+pub struct FileRotate<S: suffix::SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
     content_limit: ContentLimit,
     count: usize,
     suffix_scheme: S,
+    /// The bool is whether or not there's a .tar.gz suffix to the filename
+    suffixes: BTreeSet<SuffixInfo<S::Repr>>,
 }
 
 fn create_parent_dir(path: &Path) {
@@ -242,34 +274,123 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         let basepath = path.as_ref().to_path_buf();
         create_parent_dir(&basepath);
 
+        // Construct `suffixes`
+        let mut suffixes = BTreeSet::new();
+        let filename_prefix = &*basepath
+            .file_name()
+            .expect("basepath.file_name()")
+            .to_string_lossy();
+        let parent = basepath.parent().unwrap();
+        let filenames = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_file())
+            .map(|entry| entry.file_name());
+        for filename in filenames {
+            let filename = filename.to_string_lossy();
+            if !filename.starts_with(&filename_prefix) {
+                continue;
+            }
+            let (filename, compressed) = Self::prepare_filename(&*filename);
+            let suffix_str = filename.strip_prefix(&format!("{}.", filename_prefix));
+            if let Some(suffix) = suffix_str.and_then(|s| suffix_scheme.parse(s)) {
+                suffixes.insert(SuffixInfo { suffix, compressed });
+            }
+        }
+
         Self {
             file: File::create(&basepath).ok(),
             basepath,
             content_limit,
             count: 0,
+            suffixes,
             suffix_scheme,
         }
     }
-    /// Get paths of rotated log files (excluding the original/current log file)
+    fn prepare_filename(path: &str) -> (&str, bool) {
+        path.strip_prefix(".tar.gz")
+            .map(|x| (x, true))
+            .unwrap_or((path, false))
+    }
+    /// Get paths of rotated log files (excluding the original/current log file), ordered from
+    /// oldest to most recent
     pub fn log_paths(&mut self) -> Vec<PathBuf> {
-        self.suffix_scheme.log_paths(&self.basepath)
+        self.suffixes
+            .iter()
+            .rev()
+            .map(|suffix| suffix.to_path(&self.basepath))
+            .collect::<Vec<_>>()
+    }
+
+    /// Recursive function that keeps moving files if there's any file name collision.
+    /// If `suffix` is `None`, it moves from basepath to next suffix given by the SuffixScheme
+    /// Assumption: Any collision in file name is due to an old log file.
+    ///
+    /// Returns the suffix of the new file (the last suffix after possible cascade of renames).
+    // TODO remove panics
+    fn move_file_with_suffix(&mut self, suffix: Option<S::Repr>) -> S::Repr {
+        // NOTE: this newest_suffix is there only because TimestampSuffixScheme specifically needs
+        // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
+        // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
+        let newest_suffix = self.suffixes.iter().next().map(|info| &info.suffix);
+
+        let new_suffix = self.suffix_scheme.rotate_file(&self.basepath, newest_suffix, &suffix);
+        let new_path = new_suffix.to_path(&self.basepath);
+
+        // Move destination file out of the way if it exists
+        let newly_created_suffix = if new_path.exists() {
+            self.move_file_with_suffix(Some(new_suffix))
+        } else {
+            new_suffix
+        };
+        assert!(!new_path.exists());
+
+        let old_path = match suffix {
+            Some(suffix) => suffix.to_path(&self.basepath),
+            None => self.basepath.clone(),
+        };
+
+        fs::rename(old_path, new_path).unwrap();
+        newly_created_suffix
     }
 
     fn rotate(&mut self) -> io::Result<()> {
-        let suffix = self.suffix_scheme.rotate(&self.basepath);
-        let path = PathBuf::from(format!("{}.{}", self.basepath.display(), suffix));
-
-        create_parent_dir(&path);
+        create_parent_dir(&self.basepath);
 
         let _ = self.file.take();
 
-        // TODO should handle this error (and others)
-        let _ = fs::rename(&self.basepath, &path);
+        // This function will always create a new file. Returns suffix of that file
+        let new_suffix = self.move_file_with_suffix(None);
+        self.suffixes.insert(SuffixInfo {
+            suffix: new_suffix,
+            compressed: false,
+        });
 
         self.file = Some(File::create(&self.basepath)?);
+
         self.count = 0;
 
+        self.prune_old_files();
+
         Ok(())
+    }
+    fn prune_old_files(&mut self) {
+        // Find the youngest suffix that is too old, and then remove all suffixes that are older or
+        // equally old:
+        let mut youngest_old = None;
+        // Start from oldest suffix, stop when we find a suffix that is not too old
+        for (i, suffix) in self.suffixes.iter().enumerate().rev() {
+            if self.suffix_scheme.too_old(&suffix.suffix, i) {
+                let _ = std::fs::remove_file(suffix.to_path(&self.basepath));
+                youngest_old = Some((*suffix).clone());
+            } else {
+                break;
+            }
+        }
+        if let Some(youngest_old) = youngest_old {
+            // Removes all the too old
+            let _ = self.suffixes.split_off(&youngest_old);
+        }
     }
 }
 
@@ -352,7 +473,7 @@ mod tests {
 
         let mut log = FileRotate::new(
             &log_path,
-            TimestampSuffix::default(FileLimit::MaxFiles(4)),
+            TimestampSuffixScheme::default(FileLimit::MaxFiles(4)),
             ContentLimit::Lines(2),
         );
 
@@ -381,6 +502,10 @@ mod tests {
         log_paths_sorted.sort();
         assert_eq!(log_paths, log_paths_sorted);
 
+        // println!("{:?}", log_paths);
+        // println!("{:?}", log_paths.iter().map(|path| fs::read_to_string(path)).collect::<Vec::<_>>());
+        // println!("Main log: {}", fs::read_to_string(&log_path).unwrap());
+        list(&tmp_dir.path());
         assert_eq!("e\nf\n", fs::read_to_string(&log_paths[0]).unwrap());
         assert_eq!("g\nh\n", fs::read_to_string(&log_paths[1]).unwrap());
         assert_eq!("i\nj\n", fs::read_to_string(&log_paths[2]).unwrap());
@@ -389,7 +514,7 @@ mod tests {
     }
     #[test]
     #[cfg(feature = "chrono04")]
-    fn timestamp_age_rotation() {
+    fn timestamp_max_age_deletion() {
         // In order not to have to sleep, and keep it deterministic, let's already create the log files and see how FileRotate
         // cleans up the old ones.
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
@@ -397,7 +522,9 @@ mod tests {
         let log_path = dir.join("log");
 
         // One recent file:
-        let recent_file = chrono::offset::Local::now().format("log.%Y%m%dT%H%M%S").to_string();
+        let recent_file = chrono::offset::Local::now()
+            .format("log.%Y%m%dT%H%M%S")
+            .to_string();
         File::create(dir.join(&recent_file)).unwrap();
         // Two very old files:
         File::create(dir.join("log.20200825T151133")).unwrap();
@@ -405,11 +532,10 @@ mod tests {
 
         let mut log = FileRotate::new(
             &*log_path.to_string_lossy(),
-            TimestampSuffix::default(FileLimit::Age(chrono::Duration::weeks(1))),
+            TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1))),
             ContentLimit::Lines(1),
         );
         writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
-
 
         let mut filenames = std::fs::read_dir(dir)
             .unwrap()
@@ -462,9 +588,12 @@ mod tests {
         assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
     }
 
+    // Currently not supported. May add support if it's important.
+    // Also consider removing  `FileRotate::suffixes` and instead using more disk operations to
+    // check all files in the log directory on every rotation.
+    /*
     #[test]
     fn rotate_to_deleted_directory() {
-        // NOTE: Only supported with count, not with timestamp suffix.
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
         let parent = tmp_dir.path();
         let log_path = parent.join("log");
@@ -488,6 +617,7 @@ mod tests {
         assert_eq!("", fs::read_to_string(&log_path).unwrap());
         assert_eq!("d\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
     }
+    */
 
     #[test]
     fn write_complete_record_until_bytes_surpassed() {
@@ -497,7 +627,7 @@ mod tests {
 
         let mut log = FileRotate::new(
             &log_path,
-            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::BytesSurpassed(1),
         );
 
@@ -522,7 +652,7 @@ mod tests {
         let count = count.max(1);
         let mut log = FileRotate::new(
             &log_path,
-            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::Lines(count),
         );
 
@@ -545,7 +675,7 @@ mod tests {
         let count = count.max(1);
         let mut log = FileRotate::new(
             &log_path,
-            TimestampSuffix::default(FileLimit::MaxFiles(100)),
+            TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::Bytes(count),
         );
 
