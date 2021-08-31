@@ -2,6 +2,7 @@
 use chrono::{offset::Local, Duration, NaiveDateTime};
 use std::{
     cmp::Ordering,
+    io,
     path::{Path, PathBuf},
 };
 
@@ -33,7 +34,7 @@ pub trait SuffixScheme {
         basepath: &Path,
         newest_suffix: Option<&Self::Repr>,
         suffix: &Option<Self::Repr>,
-    ) -> Self::Repr;
+    ) -> io::Result<Self::Repr>;
 
     /// Parse suffix from string.
     fn parse(&self, suffix: &str) -> Option<Self::Repr>;
@@ -60,14 +61,16 @@ impl CountSuffix {
 impl Representation for usize {}
 impl SuffixScheme for CountSuffix {
     type Repr = usize;
-    fn rotate_file(&mut self,
+    fn rotate_file(
+        &mut self,
         _basepath: &Path,
         _: Option<&usize>,
-        suffix: &Option<usize>) -> usize {
-        match suffix {
+        suffix: &Option<usize>,
+    ) -> io::Result<usize> {
+        Ok(match suffix {
             Some(suffix) => suffix + 1,
             None => 1,
-        }
+        })
     }
     fn parse(&self, suffix: &str) -> Option<usize> {
         suffix.parse::<usize>().ok()
@@ -149,7 +152,8 @@ impl SuffixScheme for TimestampSuffixScheme {
         _basepath: &Path,
         newest_suffix: Option<&TimestampSuffix>,
         suffix: &Option<TimestampSuffix>,
-    ) -> TimestampSuffix {
+    ) -> io::Result<TimestampSuffix> {
+        assert!(suffix.is_none());
         if suffix.is_none() {
             let now = Local::now().format(self.format).to_string();
 
@@ -162,14 +166,17 @@ impl SuffixScheme for TimestampSuffixScheme {
             } else {
                 None
             };
-            TimestampSuffix {
+            Ok(TimestampSuffix {
                 timestamp: now,
-                number
-            }
+                number,
+            })
         } else {
             // This rotation scheme dictates that only the main log file should ever be renamed.
-            // TODO: do something else than panic
-            panic!("programmer error in TimestampSuffixScheme::rotate_file")
+            // In debug build the above assert will catch this.
+            Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "Critical error in file-rotate algorithm",
+            ))
         }
     }
     fn parse(&self, suffix: &str) -> Option<Self::Repr> {
