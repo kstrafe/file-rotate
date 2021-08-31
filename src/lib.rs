@@ -331,8 +331,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
     /// Assumption: Any collision in file name is due to an old log file.
     ///
     /// Returns the suffix of the new file (the last suffix after possible cascade of renames).
-    // TODO remove panics
-    fn move_file_with_suffix(&mut self, suffix: Option<S::Repr>) -> S::Repr {
+    fn move_file_with_suffix(&mut self, suffix: Option<S::Repr>) -> io::Result<S::Repr> {
         // NOTE: this newest_suffix is there only because TimestampSuffixScheme specifically needs
         // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
         // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
@@ -340,12 +339,12 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
 
         let new_suffix = self
             .suffix_scheme
-            .rotate_file(&self.basepath, newest_suffix, &suffix);
+            .rotate_file(&self.basepath, newest_suffix, &suffix)?;
         let new_path = new_suffix.to_path(&self.basepath);
 
         // Move destination file out of the way if it exists
         let newly_created_suffix = if new_path.exists() {
-            self.move_file_with_suffix(Some(new_suffix))
+            self.move_file_with_suffix(Some(new_suffix))?
         } else {
             new_suffix
         };
@@ -356,8 +355,8 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             None => self.basepath.clone(),
         };
 
-        fs::rename(old_path, new_path).unwrap();
-        newly_created_suffix
+        fs::rename(old_path, new_path)?;
+        Ok(newly_created_suffix)
     }
 
     fn rotate(&mut self) -> io::Result<()> {
@@ -366,7 +365,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         let _ = self.file.take();
 
         // This function will always create a new file. Returns suffix of that file
-        let new_suffix = self.move_file_with_suffix(None);
+        let new_suffix = self.move_file_with_suffix(None)?;
         self.suffixes.insert(SuffixInfo {
             suffix: new_suffix,
             compressed: false,
@@ -376,18 +375,19 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
 
         self.count = 0;
 
-        self.prune_old_files();
+        self.prune_old_files()?;
 
         Ok(())
     }
-    fn prune_old_files(&mut self) {
+    fn prune_old_files(&mut self) -> io::Result<()> {
         // Find the youngest suffix that is too old, and then remove all suffixes that are older or
         // equally old:
         let mut youngest_old = None;
         // Start from oldest suffix, stop when we find a suffix that is not too old
+        let mut result = Ok(());
         for (i, suffix) in self.suffixes.iter().enumerate().rev() {
             if self.suffix_scheme.too_old(&suffix.suffix, i) {
-                let _ = std::fs::remove_file(suffix.to_path(&self.basepath));
+                result = result.and(std::fs::remove_file(suffix.to_path(&self.basepath)));
                 youngest_old = Some((*suffix).clone());
             } else {
                 break;
@@ -397,6 +397,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             // Removes all the too old
             let _ = self.suffixes.split_off(&youngest_old);
         }
+        result
     }
 }
 
