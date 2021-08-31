@@ -239,14 +239,6 @@ pub struct FileRotate<S: suffix::SuffixScheme> {
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
 }
 
-fn create_parent_dir(path: &Path) {
-    if let Some(dirname) = path.parent() {
-        if !dirname.exists() {
-            fs::create_dir_all(dirname).expect("create dir");
-        }
-    }
-}
-
 impl<S: suffix::SuffixScheme> FileRotate<S> {
     /// Create a new [FileRotate].
     ///
@@ -272,15 +264,35 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         };
 
         let basepath = path.as_ref().to_path_buf();
-        create_parent_dir(&basepath);
+        fs::create_dir_all(basepath.parent().unwrap()).expect("create dir");
 
-        // Construct `suffixes`
+        let mut s = Self {
+            file: File::create(&basepath).ok(),
+            basepath,
+            content_limit,
+            count: 0,
+            suffixes: BTreeSet::new(),
+            suffix_scheme,
+        };
+        s.scan_suffixes();
+        s
+    }
+    fn ensure_log_directory_exists(&mut self) {
+        let path = self.basepath.parent().unwrap();
+        if !path.exists() {
+            let _ = fs::create_dir_all(path).expect("create dir");
+            let _ = File::create(&self.basepath);
+            self.scan_suffixes();
+        }
+    }
+    fn scan_suffixes(&mut self) {
         let mut suffixes = BTreeSet::new();
-        let filename_prefix = &*basepath
+        let filename_prefix = &*self
+            .basepath
             .file_name()
             .expect("basepath.file_name()")
             .to_string_lossy();
-        let parent = basepath.parent().unwrap();
+        let parent = self.basepath.parent().unwrap();
         let filenames = std::fs::read_dir(parent)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -293,19 +305,11 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             }
             let (filename, compressed) = Self::prepare_filename(&*filename);
             let suffix_str = filename.strip_prefix(&format!("{}.", filename_prefix));
-            if let Some(suffix) = suffix_str.and_then(|s| suffix_scheme.parse(s)) {
+            if let Some(suffix) = suffix_str.and_then(|s| self.suffix_scheme.parse(s)) {
                 suffixes.insert(SuffixInfo { suffix, compressed });
             }
         }
-
-        Self {
-            file: File::create(&basepath).ok(),
-            basepath,
-            content_limit,
-            count: 0,
-            suffixes,
-            suffix_scheme,
-        }
+        self.suffixes = suffixes;
     }
     fn prepare_filename(path: &str) -> (&str, bool) {
         path.strip_prefix(".tar.gz")
@@ -334,7 +338,9 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
         let newest_suffix = self.suffixes.iter().next().map(|info| &info.suffix);
 
-        let new_suffix = self.suffix_scheme.rotate_file(&self.basepath, newest_suffix, &suffix);
+        let new_suffix = self
+            .suffix_scheme
+            .rotate_file(&self.basepath, newest_suffix, &suffix);
         let new_path = new_suffix.to_path(&self.basepath);
 
         // Move destination file out of the way if it exists
@@ -355,7 +361,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
     }
 
     fn rotate(&mut self) -> io::Result<()> {
-        create_parent_dir(&self.basepath);
+        self.ensure_log_directory_exists();
 
         let _ = self.file.take();
 
@@ -409,7 +415,7 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
                 }
                 self.count += buf.len();
                 if let Some(ref mut file) = self.file {
-                    file.write_all(&buf)?;
+                    file.write_all(buf)?;
                 }
             }
             ContentLimit::Lines(lines) => {
@@ -433,7 +439,7 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
                     self.rotate()?
                 }
                 if let Some(ref mut file) = self.file {
-                    file.write_all(&buf)?;
+                    file.write_all(buf)?;
                 }
                 self.count += buf.len();
             }
@@ -502,10 +508,7 @@ mod tests {
         log_paths_sorted.sort();
         assert_eq!(log_paths, log_paths_sorted);
 
-        // println!("{:?}", log_paths);
-        // println!("{:?}", log_paths.iter().map(|path| fs::read_to_string(path)).collect::<Vec::<_>>());
-        // println!("Main log: {}", fs::read_to_string(&log_path).unwrap());
-        list(&tmp_dir.path());
+        list(tmp_dir.path());
         assert_eq!("e\nf\n", fs::read_to_string(&log_paths[0]).unwrap());
         assert_eq!("g\nh\n", fs::read_to_string(&log_paths[1]).unwrap());
         assert_eq!("i\nj\n", fs::read_to_string(&log_paths[2]).unwrap());
@@ -588,10 +591,6 @@ mod tests {
         assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
     }
 
-    // Currently not supported. May add support if it's important.
-    // Also consider removing  `FileRotate::suffixes` and instead using more disk operations to
-    // check all files in the log directory on every rotation.
-    /*
     #[test]
     fn rotate_to_deleted_directory() {
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
@@ -609,15 +608,15 @@ mod tests {
 
         let _ = fs::remove_dir_all(parent);
 
-        assert!(writeln!(log, "c").is_ok());
-
+        // Will fail to write `"c"`
+        writeln!(log, "c").unwrap();
         log.flush().unwrap();
 
+        // But the next `write` will succeed
         writeln!(log, "d").unwrap();
         assert_eq!("", fs::read_to_string(&log_path).unwrap());
-        assert_eq!("d\n", fs::read_to_string(&log.log_paths()[0]).unwrap());
+        assert_eq!("d\n", fs::read_to_string(&log.log_paths()[1]).unwrap());
     }
-    */
 
     #[test]
     fn write_complete_record_until_bytes_surpassed() {
