@@ -11,7 +11,7 @@
 //! We can rotate log files with the amount of lines as a limit, by using `ContentLimit::Lines`.
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! // Create a new log writer. The first argument is anything resembling a path. The
@@ -24,7 +24,7 @@
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(2), ContentLimit::Lines(3));
+//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(2), ContentLimit::Lines(3), Compression::None);
 //!
 //! // Write a bunch of lines
 //! writeln!(log, "Line 1: Hello World!");
@@ -43,14 +43,14 @@
 //! Another method of rotation is by bytes instead of lines, with `ContentLimit::Bytes`.
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", CountSuffix::new(2), ContentLimit::Bytes(5));
+//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", CountSuffix::new(2), ContentLimit::Bytes(5), Compression::None);
 //!
 //! writeln!(log, "Test file");
 //!
@@ -73,14 +73,14 @@
 //! Here's an example with 1 byte limits:
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(3), ContentLimit::Bytes(1));
+//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(3), ContentLimit::Bytes(1), Compression::None);
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
@@ -124,14 +124,15 @@
 //! their timestamp (`FileLimit::Age`), or just maximum number of files (`FileLimit::MaxFiles`).
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffixScheme, FileLimit}};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffixScheme, FileLimit},
+//! compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffixScheme::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1));
+//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffixScheme::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1), Compression::None);
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
@@ -176,6 +177,7 @@
     unused_qualifications
 )]
 
+use compression::*;
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
@@ -185,6 +187,8 @@ use std::{
 };
 use suffix::Representation;
 
+/// Compression
+pub mod compression;
 /// Suffix scheme etc
 pub mod suffix;
 
@@ -200,17 +204,22 @@ pub enum ContentLimit {
     BytesSurpassed(usize),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Eq)]
 struct SuffixInfo<Repr> {
     pub suffix: Repr,
     pub compressed: bool,
+}
+impl<R: PartialEq> PartialEq for SuffixInfo<R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.suffix == other.suffix
+    }
 }
 
 impl<Repr: Representation> SuffixInfo<Repr> {
     pub fn to_path(&self, basepath: &Path) -> PathBuf {
         let path = self.suffix.to_path(basepath);
         if self.compressed {
-            PathBuf::from(format!("{}.tar.gz", path.display()))
+            PathBuf::from(format!("{}.gz", path.display()))
         } else {
             path
         }
@@ -234,8 +243,9 @@ pub struct FileRotate<S: suffix::SuffixScheme> {
     file: Option<File>,
     content_limit: ContentLimit,
     count: usize,
+    compression: Compression,
     suffix_scheme: S,
-    /// The bool is whether or not there's a .tar.gz suffix to the filename
+    /// The bool is whether or not there's a .gz suffix to the filename
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
 }
 
@@ -250,7 +260,12 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
     /// # Panics
     ///
     /// Panics if `bytes == 0` or `lines == 0`.
-    pub fn new<P: AsRef<Path>>(path: P, suffix_scheme: S, content_limit: ContentLimit) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        path: P,
+        suffix_scheme: S,
+        content_limit: ContentLimit,
+        compression: Compression,
+    ) -> Self {
         match content_limit {
             ContentLimit::Bytes(bytes) => {
                 assert!(bytes > 0);
@@ -271,6 +286,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             basepath,
             content_limit,
             count: 0,
+            compression,
             suffixes: BTreeSet::new(),
             suffix_scheme,
         };
@@ -312,7 +328,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         self.suffixes = suffixes;
     }
     fn prepare_filename(path: &str) -> (&str, bool) {
-        path.strip_prefix(".tar.gz")
+        path.strip_prefix(".gz")
             .map(|x| (x, true))
             .unwrap_or((path, false))
     }
@@ -331,31 +347,57 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
     /// Assumption: Any collision in file name is due to an old log file.
     ///
     /// Returns the suffix of the new file (the last suffix after possible cascade of renames).
-    fn move_file_with_suffix(&mut self, suffix: Option<S::Repr>) -> io::Result<S::Repr> {
+    fn move_file_with_suffix(
+        &mut self,
+        old_suffix_info: Option<SuffixInfo<S::Repr>>,
+    ) -> io::Result<SuffixInfo<S::Repr>> {
         // NOTE: this newest_suffix is there only because TimestampSuffixScheme specifically needs
         // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
         // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
+
         let newest_suffix = self.suffixes.iter().next().map(|info| &info.suffix);
 
-        let new_suffix = self
-            .suffix_scheme
-            .rotate_file(&self.basepath, newest_suffix, &suffix)?;
-        let new_path = new_suffix.to_path(&self.basepath);
+        let new_suffix = self.suffix_scheme.rotate_file(
+            &self.basepath,
+            newest_suffix,
+            &old_suffix_info.clone().map(|i| i.suffix),
+        )?;
+
+        // The destination file/path eventual .gz suffix must match the source path
+        let new_suffix_info = SuffixInfo {
+            suffix: new_suffix,
+            compressed: old_suffix_info
+                .as_ref()
+                .map(|x| x.compressed)
+                .unwrap_or(false),
+        };
+        let new_path = new_suffix_info.to_path(&self.basepath);
+
+        // Whatever exists that would block a move to the new suffix
+        let existing_suffix_info = self.suffixes.get(&new_suffix_info).cloned();
 
         // Move destination file out of the way if it exists
-        let newly_created_suffix = if new_path.exists() {
-            self.move_file_with_suffix(Some(new_suffix))?
+        let newly_created_suffix = if let Some(existing_suffix_info) = existing_suffix_info {
+            // We might move files in a way that the destination path doesn't equal the path that
+            // was replaced. Due to possible `.gz`, a "conflicting" file doesn't mean that paths
+            // are equal.
+            self.suffixes.replace(new_suffix_info);
+            // Recurse to move conflicting file.
+            self.move_file_with_suffix(Some(existing_suffix_info))?
         } else {
-            new_suffix
+            new_suffix_info
         };
-        assert!(!new_path.exists());
 
-        let old_path = match suffix {
+        let old_path = match old_suffix_info {
             Some(suffix) => suffix.to_path(&self.basepath),
             None => self.basepath.clone(),
         };
 
+        // Do the move
+        assert!(old_path.exists());
+        assert!(!new_path.exists());
         fs::rename(old_path, new_path)?;
+
         Ok(newly_created_suffix)
     }
 
@@ -365,21 +407,18 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         let _ = self.file.take();
 
         // This function will always create a new file. Returns suffix of that file
-        let new_suffix = self.move_file_with_suffix(None)?;
-        self.suffixes.insert(SuffixInfo {
-            suffix: new_suffix,
-            compressed: false,
-        });
+        let new_suffix_info = self.move_file_with_suffix(None)?;
+        self.suffixes.insert(new_suffix_info);
 
         self.file = Some(File::create(&self.basepath)?);
 
         self.count = 0;
 
-        self.prune_old_files()?;
+        self.handle_old_files()?;
 
         Ok(())
     }
-    fn prune_old_files(&mut self) -> io::Result<()> {
+    fn handle_old_files(&mut self) -> io::Result<()> {
         // Find the youngest suffix that is too old, and then remove all suffixes that are older or
         // equally old:
         let mut youngest_old = None;
@@ -397,6 +436,31 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             // Removes all the too old
             let _ = self.suffixes.split_off(&youngest_old);
         }
+
+        // Compression
+        if let Compression::OnRotate(max_file_n) = self.compression {
+            let n = (self.suffixes.len() as i32 - max_file_n as i32).max(0) as usize;
+            // The oldest N files should be compressed
+            let suffixes_to_compress = self
+                .suffixes
+                .iter()
+                .rev()
+                .take(n)
+                .filter(|info| !info.compressed)
+                .cloned()
+                .collect::<Vec<_>>();
+            for info in suffixes_to_compress {
+                // Do the compression
+                let path = info.suffix.to_path(&self.basepath);
+                compress(&path)?;
+
+                self.suffixes.replace(SuffixInfo {
+                    compressed: true,
+                    ..info
+                });
+            }
+        }
+
         result
     }
 }
@@ -458,7 +522,7 @@ impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
 
 #[cfg(test)]
 mod tests {
-    use super::{suffix::*, *};
+    use super::{compression::*, suffix::*, *};
     use tempdir::TempDir;
 
     // Just useful to debug why test doesn't succeed
@@ -482,6 +546,7 @@ mod tests {
             &log_path,
             TimestampSuffixScheme::default(FileLimit::MaxFiles(4)),
             ContentLimit::Lines(2),
+            Compression::None,
         );
 
         // Write 9 lines
@@ -538,6 +603,7 @@ mod tests {
             &*log_path.to_string_lossy(),
             TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1))),
             ContentLimit::Lines(1),
+            Compression::None,
         );
         writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
 
@@ -562,6 +628,7 @@ mod tests {
             &*log_path.to_string_lossy(),
             CountSuffix::new(4),
             ContentLimit::Lines(2),
+            Compression::None,
         );
 
         // Write 9 lines
@@ -601,6 +668,7 @@ mod tests {
             &*log_path.to_string_lossy(),
             CountSuffix::new(4),
             ContentLimit::Lines(1),
+            Compression::None,
         );
 
         write!(log, "a\nb\n").unwrap();
@@ -629,6 +697,7 @@ mod tests {
             &log_path,
             TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::BytesSurpassed(1),
+            Compression::None,
         );
 
         write!(log, "0123456789").unwrap();
@@ -643,6 +712,48 @@ mod tests {
         assert!(&log.log_paths()[0].exists());
     }
 
+    #[test]
+    fn compression_on_rotation() {
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let parent = tmp_dir.path();
+        let log_path = parent.join("log");
+        let mut log = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            CountSuffix::new(3),
+            ContentLimit::Lines(1),
+            Compression::OnRotate(1), // Keep one file uncompressed
+        );
+
+        writeln!(log, "A").unwrap();
+        writeln!(log, "B").unwrap();
+        writeln!(log, "C").unwrap();
+        list(tmp_dir.path());
+
+        let log_paths = log.log_paths();
+
+        assert_eq!(
+            log_paths,
+            vec![
+                parent.join("log.3.gz"),
+                parent.join("log.2.gz"),
+                parent.join("log.1"),
+            ]
+        );
+
+        assert_eq!("", fs::read_to_string(&log_path).unwrap());
+
+        fn compress(text: &str) -> Vec<u8> {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+
+            encoder.write_all(text.as_bytes()).unwrap();
+            encoder.finish().unwrap()
+        }
+        assert_eq!(compress("A\n"), fs::read(&log.log_paths()[0]).unwrap());
+        assert_eq!(compress("B\n"), fs::read(&log.log_paths()[1]).unwrap());
+        assert_eq!("C\n", fs::read_to_string(&log.log_paths()[2]).unwrap());
+    }
+
     #[quickcheck_macros::quickcheck]
     fn arbitrary_lines(count: usize) {
         let tmp_dir = TempDir::new("file-rotate-test").unwrap();
@@ -654,6 +765,7 @@ mod tests {
             &log_path,
             TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::Lines(count),
+            Compression::None,
         );
 
         for _ in 0..count - 1 {
@@ -677,6 +789,7 @@ mod tests {
             &log_path,
             TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
             ContentLimit::Bytes(count),
+            Compression::None,
         );
 
         for _ in 0..count {
