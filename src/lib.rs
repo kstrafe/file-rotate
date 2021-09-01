@@ -181,7 +181,7 @@ use compression::*;
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
 };
@@ -282,7 +282,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         fs::create_dir_all(basepath.parent().unwrap()).expect("create dir");
 
         let mut s = Self {
-            file: File::create(&basepath).ok(),
+            file: None,
             basepath,
             content_limit,
             count: 0,
@@ -290,6 +290,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
             suffixes: BTreeSet::new(),
             suffix_scheme,
         };
+        s.ensure_log_directory_exists();
         s.scan_suffixes();
         s
     }
@@ -297,8 +298,15 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         let path = self.basepath.parent().unwrap();
         if !path.exists() {
             let _ = fs::create_dir_all(path).expect("create dir");
-            let _ = File::create(&self.basepath);
             self.scan_suffixes();
+        }
+        if !self.basepath.exists() || self.file.is_none() {
+            self.file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .append(true)
+                .open(&self.basepath)
+                .ok();
         }
     }
     fn scan_suffixes(&mut self) {
@@ -528,13 +536,16 @@ mod tests {
     // Just useful to debug why test doesn't succeed
     #[allow(dead_code)]
     fn list(dir: &Path) {
-        let filenames = fs::read_dir(dir)
+        let files = fs::read_dir(dir)
             .unwrap()
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_file())
-            .map(|entry| entry.file_name())
+            .map(|entry| (entry.file_name(), fs::read_to_string(entry.path())))
             .collect::<Vec<_>>();
-        println!("Files on disk: {:?}", filenames);
+        println!("Files on disk:");
+        for (name, content) in files {
+            println!("{:?}: {:?}", name, content);
+        }
     }
 
     #[test]
@@ -752,6 +763,28 @@ mod tests {
         assert_eq!(compress("A\n"), fs::read(&log.log_paths()[0]).unwrap());
         assert_eq!(compress("B\n"), fs::read(&log.log_paths()[1]).unwrap());
         assert_eq!("C\n", fs::read_to_string(&log.log_paths()[2]).unwrap());
+    }
+
+    #[test]
+    fn no_truncate() {
+        // Don't truncate log file if it already exists
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let parent = tmp_dir.path();
+        let log_path = parent.join("log");
+        let file_rotate = || {
+            FileRotate::new(
+                &*log_path.to_string_lossy(),
+                CountSuffix::new(3),
+                ContentLimit::Lines(10000),
+                Compression::None,
+            )
+        };
+        writeln!(file_rotate(), "A").unwrap();
+        list(parent);
+        writeln!(file_rotate(), "B").unwrap();
+        list(parent);
+
+        assert_eq!("A\nB\n", fs::read_to_string(&log_path).unwrap());
     }
 
     #[quickcheck_macros::quickcheck]
