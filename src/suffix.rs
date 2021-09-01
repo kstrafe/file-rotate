@@ -41,7 +41,7 @@ pub trait SuffixScheme {
 
     /// Whether either the suffix or the chronological file number indicates that the file is old
     /// and should be deleted, depending of course on the file limit.
-    /// `file_number` starts at 0.
+    /// `file_number` starts at 0 for the most recent suffix.
     fn too_old(&self, suffix: &Self::Repr, file_number: usize) -> bool;
 }
 
@@ -52,7 +52,9 @@ pub struct CountSuffix {
 }
 
 impl CountSuffix {
-    /// New CountSuffix
+    /// New CountSuffix, deleting files when the total number of files exceeds `max_files`.
+    /// For example, if max_files is 3, then the files `log`, `log.1`, `log.2`, `log.3` may exist
+    /// but not `log.4`. In other words, `max_files` determines the largest possible suffix number.
     pub fn new(max_files: usize) -> Self {
         Self { max_files }
     }
