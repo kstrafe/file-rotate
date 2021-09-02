@@ -6,6 +6,7 @@ use std::{
 };
 
 /// In the future, maybe stream compression
+#[derive(Debug, Clone)]
 pub enum Compression {
     /// No compression
     None,

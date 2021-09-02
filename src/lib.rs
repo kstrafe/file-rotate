@@ -185,7 +185,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
 };
-use suffix::Representation;
+use suffix::*;
 
 /// Compression
 pub mod compression;
@@ -197,6 +197,7 @@ mod tests;
 // ---
 
 /// When to move files: Condition on which a file is rotated.
+#[derive(Clone, Debug)]
 pub enum ContentLimit {
     /// Cut the log at the exact size in bytes.
     Bytes(usize),
@@ -206,9 +207,12 @@ pub enum ContentLimit {
     BytesSurpassed(usize),
 }
 
+/// Used mostly internally. Info about suffix + compressed state.
 #[derive(Clone, Debug, Eq)]
-struct SuffixInfo<Repr> {
+pub struct SuffixInfo<Repr> {
+    /// Suffix
     pub suffix: Repr,
+    /// Whether there is a `.gz` suffix after the suffix
     pub compressed: bool,
 }
 impl<R: PartialEq> PartialEq for SuffixInfo<R> {
@@ -218,6 +222,7 @@ impl<R: PartialEq> PartialEq for SuffixInfo<R> {
 }
 
 impl<Repr: Representation> SuffixInfo<Repr> {
+    /// Append this suffix (and eventual `.gz`) to a path
     pub fn to_path(&self, basepath: &Path) -> PathBuf {
         let path = self.suffix.to_path(basepath);
         if self.compressed {
@@ -240,7 +245,7 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 }
 
 /// The main writer used for rotating logs.
-pub struct FileRotate<S: suffix::SuffixScheme> {
+pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
     content_limit: ContentLimit,
@@ -251,7 +256,7 @@ pub struct FileRotate<S: suffix::SuffixScheme> {
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
 }
 
-impl<S: suffix::SuffixScheme> FileRotate<S> {
+impl<S: SuffixScheme> FileRotate<S> {
     /// Create a new [FileRotate].
     ///
     /// The basename of the `path` is used to create new log files by appending an extension of the
@@ -312,35 +317,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
         }
     }
     fn scan_suffixes(&mut self) {
-        let mut suffixes = BTreeSet::new();
-        let filename_prefix = &*self
-            .basepath
-            .file_name()
-            .expect("basepath.file_name()")
-            .to_string_lossy();
-        let parent = self.basepath.parent().unwrap();
-        let filenames = std::fs::read_dir(parent)
-            .unwrap()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().is_file())
-            .map(|entry| entry.file_name());
-        for filename in filenames {
-            let filename = filename.to_string_lossy();
-            if !filename.starts_with(&filename_prefix) {
-                continue;
-            }
-            let (filename, compressed) = Self::prepare_filename(&*filename);
-            let suffix_str = filename.strip_prefix(&format!("{}.", filename_prefix));
-            if let Some(suffix) = suffix_str.and_then(|s| self.suffix_scheme.parse(s)) {
-                suffixes.insert(SuffixInfo { suffix, compressed });
-            }
-        }
-        self.suffixes = suffixes;
-    }
-    fn prepare_filename(path: &str) -> (&str, bool) {
-        path.strip_prefix(".gz")
-            .map(|x| (x, true))
-            .unwrap_or((path, false))
+        self.suffixes = self.suffix_scheme.scan_suffixes(&self.basepath);
     }
     /// Get paths of rotated log files (excluding the original/current log file), ordered from
     /// oldest to most recent
@@ -475,7 +452,7 @@ impl<S: suffix::SuffixScheme> FileRotate<S> {
     }
 }
 
-impl<S: suffix::SuffixScheme> Write for FileRotate<S> {
+impl<S: SuffixScheme> Write for FileRotate<S> {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         let written = buf.len();
         match self.content_limit {

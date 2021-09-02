@@ -1,7 +1,9 @@
+use crate::SuffixInfo;
 #[cfg(feature = "chrono04")]
 use chrono::{offset::Local, Duration, NaiveDateTime};
 use std::{
     cmp::Ordering,
+    collections::BTreeSet,
     io,
     path::{Path, PathBuf},
 };
@@ -43,6 +45,39 @@ pub trait SuffixScheme {
     /// and should be deleted, depending of course on the file limit.
     /// `file_number` starts at 0 for the most recent suffix.
     fn too_old(&self, suffix: &Self::Repr, file_number: usize) -> bool;
+
+    /// Find all files in the basepath.parent() directory that has path equal to basepath + a valid
+    /// suffix. Return sorted collection - sorted from most recent to oldest.
+    fn scan_suffixes(&self, basepath: &Path) -> BTreeSet<SuffixInfo<Self::Repr>> {
+        let mut suffixes = BTreeSet::new();
+        let filename_prefix = basepath
+            .file_name()
+            .expect("basepath.file_name()")
+            .to_string_lossy();
+        let parent = basepath.parent().unwrap();
+        let filenames = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_file())
+            .map(|entry| entry.file_name());
+        for filename in filenames {
+            let filename = filename.to_string_lossy();
+            if !filename.starts_with(&*filename_prefix) {
+                continue;
+            }
+            let (filename, compressed) = prepare_filename(&*filename);
+            let suffix_str = filename.strip_prefix(&format!("{}.", filename_prefix));
+            if let Some(suffix) = suffix_str.and_then(|s| self.parse(s)) {
+                suffixes.insert(SuffixInfo { suffix, compressed });
+            }
+        }
+        suffixes
+    }
+}
+fn prepare_filename(path: &str) -> (&str, bool) {
+    path.strip_prefix(".gz")
+        .map(|x| (x, true))
+        .unwrap_or((path, false))
 }
 
 /// Rotated log files get a number as suffix. The greater the number, the older. The oldest files
