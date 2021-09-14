@@ -75,7 +75,7 @@ pub trait SuffixScheme {
     }
 }
 fn prepare_filename(path: &str) -> (&str, bool) {
-    path.strip_prefix(".gz")
+    path.strip_suffix(".gz")
         .map(|x| (x, true))
         .unwrap_or((path, false))
 }
@@ -256,6 +256,7 @@ pub enum FileLimit {
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::fs::File;
     #[test]
     fn timestamp_ordering() {
         assert!(
@@ -276,5 +277,19 @@ mod test {
                 number: None
             }
         );
+    }
+
+    #[test]
+    fn scan_suffixes() {
+        let directory = tempdir::TempDir::new("file-rotate").unwrap();
+        let directory = directory.path();
+        let log_path = directory.join("logs");
+        std::fs::create_dir_all(&log_path).unwrap();
+        File::create(log_path.join("all.log.20210911T121830")).unwrap();
+        File::create(log_path.join("all.log.20210911T121831.gz")).unwrap();
+
+        let suffix_scheme = TimestampSuffixScheme::default(FileLimit::Age(Duration::weeks(1)));
+        let paths = suffix_scheme.scan_suffixes(&log_path.join("all.log"));
+        assert_eq!(paths.len(), 2);
     }
 }
