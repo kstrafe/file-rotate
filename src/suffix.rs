@@ -152,8 +152,8 @@ impl TimestampSuffixScheme {
 /// Structured representation of the suffixes of TimestampSuffixScheme.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimestampSuffix {
-    timestamp: String,
-    number: Option<usize>,
+    pub timestamp: String,
+    pub number: Option<usize>,
 }
 impl Representation for TimestampSuffix {}
 impl Ord for TimestampSuffix {
