@@ -1,4 +1,4 @@
-use super::{compression::*, suffix::*, *};
+use super::{suffix::*, *};
 use tempdir::TempDir;
 
 // Just useful to debug why test doesn't succeed
@@ -222,8 +222,7 @@ fn compression_on_rotation() {
     assert_eq!("", fs::read_to_string(&log_path).unwrap());
 
     fn compress(text: &str) -> Vec<u8> {
-        let mut encoder =
-            flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
 
         encoder.write_all(text.as_bytes()).unwrap();
         encoder.finish().unwrap()
@@ -253,6 +252,33 @@ fn no_truncate() {
     list(parent);
 
     assert_eq!("A\nB\n", fs::read_to_string(&log_path).unwrap());
+}
+
+#[test]
+fn count_recalculation() {
+    // If there is already some content in the logging file, FileRotate should set its `count`
+    // field to the size of the file, so that it rotates at the right time
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let parent = tmp_dir.path();
+    let log_path = parent.join("log");
+
+    std::fs::write(&log_path, b"a").unwrap();
+
+    let mut file_rotate = FileRotate::new(
+        &*log_path.to_string_lossy(),
+        CountSuffix::new(3),
+        ContentLimit::Bytes(2),
+        Compression::None,
+    );
+
+    write!(file_rotate, "bc").unwrap();
+    assert_eq!(file_rotate.log_paths().len(), 1);
+    // The size of the rotated file should be 2 ('ab)
+    let rotated_content = std::fs::read(&file_rotate.log_paths()[0]).unwrap();
+    assert_eq!(rotated_content, b"ab");
+    // The size of the main file should be 1 ('c')
+    let main_content = std::fs::read(log_path).unwrap();
+    assert_eq!(main_content, b"c");
 }
 
 #[quickcheck_macros::quickcheck]

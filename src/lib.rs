@@ -308,6 +308,13 @@ impl<S: SuffixScheme> FileRotate<S> {
             self.scan_suffixes();
         }
         if !self.basepath.exists() || self.file.is_none() {
+            // Update `count`
+            if let Ok(metadata) = self.basepath.metadata() {
+                self.count = metadata.len() as usize;
+            } else {
+                self.count = 0;
+            }
+            // Create new file
             self.file = OpenOptions::new()
                 .write(true)
                 .create(true)
