@@ -2,7 +2,7 @@
 
 Rotate files with configurable suffix.
 
-Look to the [docs](https://docs.rs/file-rotate/0.4.0/file_rotate/) for explanatory examples.
+Look to the [docs](https://docs.rs/file-rotate/0.5.0/file_rotate/) for explanatory examples.
 
 ## Basic example
 
