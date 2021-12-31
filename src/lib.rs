@@ -185,6 +185,7 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
 };
+use std::io::{BufRead, BufReader};
 use suffix::*;
 
 /// Compression
@@ -308,19 +309,33 @@ impl<S: SuffixScheme> FileRotate<S> {
             self.scan_suffixes();
         }
         if !self.basepath.exists() || self.file.is_none() {
-            // Update `count`
-            if let Ok(metadata) = self.basepath.metadata() {
-                self.count = metadata.len() as usize;
-            } else {
-                self.count = 0;
-            }
-            // Create new file
+            // Open or create the file
             self.file = OpenOptions::new()
-                .write(true)
+                .read(true)
                 .create(true)
                 .append(true)
                 .open(&self.basepath)
                 .ok();
+            match self.file {
+                None =>
+                    self.count = 0,
+                Some(ref mut file) => {
+                    match self.content_limit {
+                        ContentLimit::Bytes(_)
+                        | ContentLimit::BytesSurpassed(_) => {
+                            // Update byte `count`
+                            if let Ok(metadata) = file.metadata() {
+                                self.count = metadata.len() as usize;
+                            } else {
+                                self.count = 0;
+                            }
+                        }
+                        ContentLimit::Lines(_) => {
+                            self.count = BufReader::new(file).lines().count();
+                        }
+                    }
+                }
+            }
         }
     }
     fn scan_suffixes(&mut self) {

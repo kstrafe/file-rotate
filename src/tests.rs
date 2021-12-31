@@ -255,7 +255,7 @@ fn no_truncate() {
 }
 
 #[test]
-fn count_recalculation() {
+fn byte_count_recalculation() {
     // If there is already some content in the logging file, FileRotate should set its `count`
     // field to the size of the file, so that it rotates at the right time
     let tmp_dir = TempDir::new("file-rotate-test").unwrap();
@@ -279,6 +279,41 @@ fn count_recalculation() {
     // The size of the main file should be 1 ('c')
     let main_content = std::fs::read(log_path).unwrap();
     assert_eq!(main_content, b"c");
+}
+
+#[test]
+fn line_count_recalculation() {
+    // If there is already some content in the logging file, FileRotate should set its `count`
+    // field to the line count of the file, so that it rotates at the right time
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let parent = tmp_dir.path();
+    let log_path = parent.join("log");
+
+    std::fs::write(&log_path, b"a\n").unwrap();
+
+    let mut file_rotate = FileRotate::new(
+        &*log_path.to_string_lossy(),
+        CountSuffix::new(3),
+        ContentLimit::Lines(2),
+        Compression::None,
+    );
+
+    // A single line existed before the new logger ('a')
+    assert_eq!(file_rotate.count, 1);
+
+    writeln!(file_rotate, "b").unwrap();
+    writeln!(file_rotate, "c").unwrap();
+
+    assert_eq!(file_rotate.log_paths().len(), 1);
+
+    // The line count of the rotated file should be 2 ('a' & 'b')
+    let mut lines = BufReader::new(File::open(&file_rotate.log_paths()[0]).unwrap()).lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "a".to_string());
+    assert_eq!(lines.next().unwrap().unwrap(), "b".to_string());
+
+    // The line count of the main file should be 1 ('c')
+    let mut lines = BufReader::new(File::open(&log_path).unwrap()).lines();
+    assert_eq!(lines.next().unwrap().unwrap(), "c".to_string());
 }
 
 #[quickcheck_macros::quickcheck]
