@@ -23,14 +23,18 @@ pub trait SuffixScheme {
     /// E.g. if the suffix is a number, you can use `usize`.
     type Repr: Representation;
 
-    /// The file at `suffix` needs to be rotated.
-    /// Returns the target file path.
-    /// The file will be moved outside this function.
-    /// If the target path already exists, rotate_file is called again with `path` set to the
-    /// target path.  Thus it cascades files by default, and if this is not desired, it's up to
-    /// `rotate_file` to return a path that does not already exist.
+    /// `file-rotate` calls this function when the file at `suffix` needs to be rotated, and moves the log file
+    /// accordingly. Thus, this function should not move any files itself.
     ///
-    /// `prev_suffix` is provided just in case it's useful (not always)
+    /// If `suffix` is `None`, it means it's the main log file (with path equal to just `basepath`)
+    /// that is being rotated.
+    ///
+    /// Returns the target suffix that the log file should be moved to.
+    /// If the target suffix already exists, `rotate_file` is called again with `suffix` set to the
+    /// target suffix.  Thus it cascades files by default, and if this is not desired, it's up to
+    /// `rotate_file` to return a suffix that does not already exist on disk.
+    ///
+    /// `newest_suffix` is provided just in case it's useful (depending on the particular suffix scheme, it's not always useful)
     fn rotate_file(
         &mut self,
         basepath: &Path,
@@ -47,7 +51,8 @@ pub trait SuffixScheme {
     fn too_old(&self, suffix: &Self::Repr, file_number: usize) -> bool;
 
     /// Find all files in the basepath.parent() directory that has path equal to basepath + a valid
-    /// suffix. Return sorted collection - sorted from most recent to oldest.
+    /// suffix. Return sorted collection - sorted from most recent to oldest based on the
+    /// [Ord](std::cmp::Ord) implementation of `Self::Repr`.
     fn scan_suffixes(&self, basepath: &Path) -> BTreeSet<SuffixInfo<Self::Repr>> {
         let mut suffixes = BTreeSet::new();
         let filename_prefix = basepath

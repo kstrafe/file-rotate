@@ -207,8 +207,10 @@
 //!     TimestampSuffixScheme::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
 //! );
 //! ```
+//!
 //! [SuffixScheme::scan_suffixes] also takes into account the possibility of the extra `.gz` suffix, and
 //! interprets it correctly as compression. The output:
+//!
 //! ```ignore
 //! {
 //!     SuffixInfo {

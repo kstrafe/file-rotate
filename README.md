@@ -2,7 +2,7 @@
 
 Rotate files with configurable suffix.
 
-Look to the [docs](https://docs.rs/file-rotate/0.5.0/file_rotate/) for explanatory examples of all features, like:
+Look to the [docs](https://docs.rs/file-rotate/latest/file_rotate/index.html) for explanatory examples of all features, like:
 * Using count or timestamp as suffix
 * Age-based deletion of log files
 * Optional compression
