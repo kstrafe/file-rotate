@@ -122,8 +122,10 @@ impl SuffixScheme for CountSuffix {
 ///  - The `format` should ensure that the lexical and chronological orderings are the same
 #[cfg(feature = "chrono04")]
 pub struct TimestampSuffixScheme {
-    format: &'static str,
-    file_limit: FileLimit,
+    /// The format of the timestamp suffix
+    pub format: &'static str,
+    /// The file limit, e.g. when to delete an old file - by age (given by suffix) or by number of files
+    pub file_limit: FileLimit,
 }
 
 #[cfg(feature = "chrono04")]
@@ -138,14 +140,6 @@ impl TimestampSuffixScheme {
     /// Create new TimestampSuffixScheme suffix scheme
     pub fn with_format(format: &'static str, file_limit: FileLimit) -> Self {
         Self { format, file_limit }
-    }
-    /// NOTE: For future use in RotationMode::Custom
-    pub fn should_rotate(&self, age: Duration) -> impl Fn(&str) -> bool {
-        let format = self.format.to_string();
-        move |suffix| {
-            let old_timestamp = (Local::now() - age).format(&format).to_string();
-            suffix < old_timestamp.as_str()
-        }
     }
 }
 
@@ -246,12 +240,13 @@ impl SuffixScheme for TimestampSuffixScheme {
     }
 }
 
-/// How to determine if a file should be deleted, in the case of TimestampSuffixScheme.
+/// How to determine if a file should be deleted, in the case of [TimestampSuffixScheme].
 #[cfg(feature = "chrono04")]
 pub enum FileLimit {
     /// Delete the oldest files if number of files is too high
     MaxFiles(usize),
-    /// Delete files that have too old timestamp
+    /// Delete files whose by their age, determined by the suffix (only works in the case that
+    /// [TimestampSuffixScheme] is used)
     Age(Duration),
 }
 

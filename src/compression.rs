@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// In the future, maybe stream compression
+/// Compression mode - when to compress files.
 #[derive(Debug, Clone)]
 pub enum Compression {
     /// No compression

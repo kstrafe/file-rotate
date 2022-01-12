@@ -4,11 +4,11 @@
 //!
 //! # Content limit #
 //!
-//! Content limit specifies at what point a log file has to be rotated.
+//! [ContentLimit] specifies at what point a log file has to be rotated.
 //!
 //! ## Rotating by Lines ##
 //!
-//! We can rotate log files with the amount of lines as a limit, by using `ContentLimit::Lines`.
+//! We can rotate log files with the amount of lines as a limit, by using [ContentLimit::Lines].
 //!
 //! ```
 //! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
@@ -40,7 +40,7 @@
 //!
 //! ## Rotating by Bytes ##
 //!
-//! Another method of rotation is by bytes instead of lines, with `ContentLimit::Bytes`.
+//! Another method of rotation is by bytes instead of lines, with [ContentLimit::Bytes].
 //!
 //! ```
 //! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
@@ -62,12 +62,12 @@
 //!
 //! # Rotation Method #
 //!
-//! Two rotation methods are provided, but any behaviour can be implemented with the `SuffixScheme`
+//! Two rotation methods are provided, but any behaviour can be implemented with the [SuffixScheme]
 //! trait.
 //!
 //! ## Basic count ##
 //!
-//! With `CountSuffix`, when the limit is reached in the main log file, the file is moved with
+//! With [CountSuffix], when the limit is reached in the main log file, the file is moved with
 //! suffix `.1`, and subsequently numbered files are moved in a cascade.
 //!
 //! Here's an example with 1 byte limits:
@@ -109,7 +109,7 @@
 //!
 //! ## Timestamp suffix ##
 //!
-//! With `TimestampSuffix`, when the limit is reached in the main log file, the file is moved with
+//! With [TimestampSuffix], when the limit is reached in the main log file, the file is moved with
 //! suffix equal to the current timestamp (with the specified or a default format). If the
 //! destination file name already exists, `.1` (and up) is appended.
 //!
@@ -121,7 +121,7 @@
 //! component).
 //!
 //! With this suffix scheme, you can also decide whether to delete old files based on the age of
-//! their timestamp (`FileLimit::Age`), or just maximum number of files (`FileLimit::MaxFiles`).
+//! their timestamp ([FileLimit::Age]), or just maximum number of files ([FileLimit::MaxFiles]).
 //!
 //! ```
 //! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffixScheme, FileLimit},
@@ -159,14 +159,96 @@
 //! TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1)));
 //! ```
 //!
+//! # Compression #
+//!
+//! Select a [Compression] mode to make the file rotater compress old files using flate2.
+//! Compressed files get an additional suffix `.gz` after the main suffix.
+//!
+//! ## Compression example ##
+//! If we run this:
+//!
+//! ```ignore
+//! use file_rotate::{compression::*, suffix::*, *};
+//! use std::io::Write;
+//!
+//! let mut log = FileRotate::new(
+//!     "./log",
+//!     TimestampSuffixScheme::default(FileLimit::MaxFiles(4)),
+//!     ContentLimit::Bytes(1),
+//!     Compression::OnRotate(2),
+//! );
+//!
+//! for i in 0..6 {
+//!     write!(log, "{}", i).unwrap();
+//!     std::thread::sleep(std::time::Duration::from_secs(1));
+//! }
+//! ```
+//! The following files will be created:
+//! ```ignore
+//! log  log.20220112T112415.gz  log.20220112T112416.gz  log.20220112T112417  log.20220112T112418
+//! ```
+//! And we can assemble all the available log data with:
+//! ```ignore
+//! $ gunzip -c log.20220112T112415.gz  ; gunzip -c log.20220112T112416.gz ; cat log.20220112T112417 log.20220112T112418 log
+//! 12345
+//! ```
+//!
+//!
+//! ## Get structured list of log files ##
+//!
+//! We can programmatically get the list of log files.
+//! The following code scans the current directory and recognizes log files based on their file name:
+//!
+//! ```
+//! # use file_rotate::{suffix::*, *};
+//! # use std::path::Path;
+//! println!(
+//!     "{:#?}",
+//!     TimestampSuffixScheme::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
+//! );
+//! ```
+//! [SuffixScheme::scan_suffixes] also takes into account the possibility of the extra `.gz` suffix, and
+//! interprets it correctly as compression. The output:
+//! ```ignore
+//! {
+//!     SuffixInfo {
+//!         suffix: TimestampSuffix {
+//!             timestamp: "20220112T112418",
+//!             number: None,
+//!         },
+//!         compressed: false,
+//!     },
+//!     SuffixInfo {
+//!         suffix: TimestampSuffix {
+//!             timestamp: "20220112T112417",
+//!             number: None,
+//!         },
+//!         compressed: false,
+//!     },
+//!     SuffixInfo {
+//!         suffix: TimestampSuffix {
+//!             timestamp: "20220112T112416",
+//!             number: None,
+//!         },
+//!         compressed: true,
+//!     },
+//!     SuffixInfo {
+//!         suffix: TimestampSuffix {
+//!             timestamp: "20220112T112415",
+//!             number: None,
+//!         },
+//!         compressed: true,
+//!     },
+//! }
+//! ```
+//! This information can be used by for example a program to assemble log history.
+//!
 //! # Filesystem Errors #
 //!
 //! If the directory containing the logs is deleted or somehow made inaccessible then the rotator
 //! will simply continue operating without fault. When a rotation occurs, it attempts to open a
 //! file in the directory. If it can, it will just continue logging. If it can't then the written
-//! date is sent to the void.
-//!
-//! This logger never panics.
+//! data is sent to the void.
 
 #![deny(
     missing_docs,
@@ -178,6 +260,7 @@
 )]
 
 use compression::*;
+use std::io::{BufRead, BufReader};
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
@@ -185,7 +268,6 @@ use std::{
     io::{self, Write},
     path::{Path, PathBuf},
 };
-use std::io::{BufRead, BufReader};
 use suffix::*;
 
 /// Compression
@@ -317,12 +399,10 @@ impl<S: SuffixScheme> FileRotate<S> {
                 .open(&self.basepath)
                 .ok();
             match self.file {
-                None =>
-                    self.count = 0,
+                None => self.count = 0,
                 Some(ref mut file) => {
                     match self.content_limit {
-                        ContentLimit::Bytes(_)
-                        | ContentLimit::BytesSurpassed(_) => {
+                        ContentLimit::Bytes(_) | ContentLimit::BytesSurpassed(_) => {
                             // Update byte `count`
                             if let Ok(metadata) = file.metadata() {
                                 self.count = metadata.len() as usize;

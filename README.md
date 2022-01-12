@@ -2,7 +2,13 @@
 
 Rotate files with configurable suffix.
 
-Look to the [docs](https://docs.rs/file-rotate/0.5.0/file_rotate/) for explanatory examples.
+Look to the [docs](https://docs.rs/file-rotate/0.5.0/file_rotate/) for explanatory examples of all features, like:
+* Using count or timestamp as suffix
+* Age-based deletion of log files
+* Optional compression
+* Getting a list of log files
+
+Following are some supplementary examples to get started.
 
 ## Basic example
 
@@ -73,11 +79,6 @@ Line 9
 The timestamp format (including the extra trailing `.N`) works by default so that the lexical ordering of filenames equals the chronological ordering.
 So it almost works perfectly with `cat logs/*`, except that `log` is smaller (lexically "older") than all the rest. This can of course be fixed with a more complex script to assemble the logs.
 
-
-## Content limit
-
-We can rotate log files by using the amount of lines as a limit, as seem above with `ContentLimit::Lines(3)`.
-Another method of rotation is by bytes instead of lines, byt using for example `ContentLimit::BytesSurpassed(1_000_000)`.
 
 ## License
 
