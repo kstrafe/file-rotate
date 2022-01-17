@@ -330,6 +330,7 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 }
 
 /// The main writer used for rotating logs.
+#[derive(Debug)]
 pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
