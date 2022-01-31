@@ -59,6 +59,7 @@ pub trait SuffixScheme {
             .file_name()
             .expect("basepath.file_name()")
             .to_string_lossy();
+        let basepath = basepath.canonicalize().unwrap();
         let parent = basepath.parent().unwrap();
         let filenames = std::fs::read_dir(parent)
             .unwrap()
