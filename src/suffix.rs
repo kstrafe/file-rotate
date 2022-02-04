@@ -59,8 +59,19 @@ pub trait SuffixScheme {
             .file_name()
             .expect("basepath.file_name()")
             .to_string_lossy();
-        let basepath = basepath.canonicalize().unwrap();
+
+        // We need the parent directory of the given basepath, but this should also work when the path
+        // only has one segment. Thus we prepend the current working dir if the path is relative:
+        let basepath = if basepath.is_relative() {
+            let mut path = std::env::current_dir().unwrap();
+            path.push(basepath);
+            path
+        } else {
+            basepath.to_path_buf()
+        };
+
         let parent = basepath.parent().unwrap();
+
         let filenames = std::fs::read_dir(parent)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -93,7 +104,7 @@ pub struct CountSuffix {
 }
 
 impl CountSuffix {
-    /// New CountSuffix, deleting files when the total number of files exceeds `max_files`.
+    /// New suffix scheme, deleting files when the total number of files exceeds `max_files`.
     /// For example, if max_files is 3, then the files `log`, `log.1`, `log.2`, `log.3` may exist
     /// but not `log.4`. In other words, `max_files` determines the largest possible suffix number.
     pub fn new(max_files: usize) -> Self {
@@ -284,15 +295,38 @@ mod test {
 
     #[test]
     fn scan_suffixes() {
-        let directory = tempdir::TempDir::new("file-rotate").unwrap();
-        let directory = directory.path();
-        let log_path = directory.join("logs");
-        std::fs::create_dir_all(&log_path).unwrap();
-        File::create(log_path.join("all.log.20210911T121830")).unwrap();
-        File::create(log_path.join("all.log.20210911T121831.gz")).unwrap();
-
+        let working_dir = tempdir::TempDir::new("file-rotate").unwrap();
+        let working_dir = working_dir.path().join("dir");
         let suffix_scheme = TimestampSuffixScheme::default(FileLimit::Age(Duration::weeks(1)));
-        let paths = suffix_scheme.scan_suffixes(&log_path.join("all.log"));
-        assert_eq!(paths.len(), 2);
+
+        // Test `scan_suffixes` for different possible paths given to it
+        // (it used to have a bug taking e.g. "log".parent() --> panic)
+        for relative_path in ["logs/log", "./log", "log", "../log", "../logs/log"] {
+            std::fs::create_dir_all(&working_dir).unwrap();
+            println!("Testing relative path: {}", relative_path);
+            let relative_path = Path::new(relative_path);
+
+            let log_file = working_dir.join(relative_path);
+            let log_dir = log_file.parent().unwrap();
+            // Ensure all directories needed exist
+            std::fs::create_dir_all(log_dir).unwrap();
+
+            // We cd into working_dir
+            std::env::set_current_dir(&working_dir).unwrap();
+
+            // Need to create the log file in order to canonicalize it and then get the parent
+            File::create(working_dir.join(&relative_path)).unwrap();
+            let canonicalized = relative_path.canonicalize().unwrap();
+            let relative_dir = canonicalized.parent().unwrap();
+
+            File::create(relative_dir.join("log.20210911T121830")).unwrap();
+            File::create(relative_dir.join("log.20210911T121831.gz")).unwrap();
+
+            let paths = suffix_scheme.scan_suffixes(relative_path);
+            assert_eq!(paths.len(), 2);
+
+            // Cleanup
+            std::fs::remove_dir_all(&working_dir).unwrap();
+        }
     }
 }

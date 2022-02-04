@@ -109,7 +109,7 @@
 //!
 //! ## Timestamp suffix ##
 //!
-//! With [TimestampSuffix], when the limit is reached in the main log file, the file is moved with
+//! With [TimestampSuffixScheme], when the limit is reached in the main log file, the file is moved with
 //! suffix equal to the current timestamp (with the specified or a default format). If the
 //! destination file name already exists, `.1` (and up) is appended.
 //!
