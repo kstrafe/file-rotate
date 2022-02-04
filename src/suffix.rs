@@ -1,3 +1,8 @@
+//! Suffix schemes determine the suffix of rotated files
+//!
+//! This behaviour is fully extensible through the [SuffixScheme] trait, and two behaviours are
+//! provided: [AppendCount] and [AppendTimestamp]
+//!
 use crate::SuffixInfo;
 #[cfg(feature = "chrono04")]
 use chrono::{offset::Local, Duration, NaiveDateTime};
@@ -97,15 +102,16 @@ fn prepare_filename(path: &str) -> (&str, bool) {
         .unwrap_or((path, false))
 }
 
-/// Rotated log files get a number as suffix. The greater the number, the older. The oldest files
-/// are deleted.
-pub struct CountSuffix {
+/// Append a number when rotating the file.
+/// The greater the number, the older. The oldest files are deleted.
+pub struct AppendCount {
     max_files: usize,
 }
 
-impl CountSuffix {
-    /// New suffix scheme, deleting files when the total number of files exceeds `max_files`.
-    /// For example, if max_files is 3, then the files `log`, `log.1`, `log.2`, `log.3` may exist
+impl AppendCount {
+    /// New suffix scheme, deleting files when the number of rotated files (i.e. excluding the main
+    /// file) exceeds `max_files`.
+    /// For example, if `max_files` is 3, then the files `log`, `log.1`, `log.2`, `log.3` may exist
     /// but not `log.4`. In other words, `max_files` determines the largest possible suffix number.
     pub fn new(max_files: usize) -> Self {
         Self { max_files }
@@ -113,7 +119,7 @@ impl CountSuffix {
 }
 
 impl Representation for usize {}
-impl SuffixScheme for CountSuffix {
+impl SuffixScheme for AppendCount {
     type Repr = usize;
     fn rotate_file(
         &mut self,
@@ -134,11 +140,14 @@ impl SuffixScheme for CountSuffix {
     }
 }
 
+/// Append current timestamp as suffix when rotating files.
+/// If the timestamp already exists, an additional number is appended.
+///
 /// Current limitations:
-///  - Neither `format` or the base filename can include the character `"."`.
+///  - Neither `format` nor the base filename can include the character `"."`.
 ///  - The `format` should ensure that the lexical and chronological orderings are the same
 #[cfg(feature = "chrono04")]
-pub struct TimestampSuffixScheme {
+pub struct AppendTimestamp {
     /// The format of the timestamp suffix
     pub format: &'static str,
     /// The file limit, e.g. when to delete an old file - by age (given by suffix) or by number of files
@@ -146,7 +155,7 @@ pub struct TimestampSuffixScheme {
 }
 
 #[cfg(feature = "chrono04")]
-impl TimestampSuffixScheme {
+impl AppendTimestamp {
     /// With format `"%Y%m%dT%H%M%S"`
     pub fn default(file_limit: FileLimit) -> Self {
         Self {
@@ -154,13 +163,13 @@ impl TimestampSuffixScheme {
             file_limit,
         }
     }
-    /// Create new TimestampSuffixScheme suffix scheme
+    /// Create new AppendTimestamp suffix scheme
     pub fn with_format(format: &'static str, file_limit: FileLimit) -> Self {
         Self { format, file_limit }
     }
 }
 
-/// Structured representation of the suffixes of TimestampSuffixScheme.
+/// Structured representation of the suffixes of AppendTimestamp.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimestampSuffix {
     /// The timestamp
@@ -194,7 +203,7 @@ impl std::fmt::Display for TimestampSuffix {
 }
 
 #[cfg(feature = "chrono04")]
-impl SuffixScheme for TimestampSuffixScheme {
+impl SuffixScheme for AppendTimestamp {
     type Repr = TimestampSuffix;
 
     fn rotate_file(
@@ -257,13 +266,12 @@ impl SuffixScheme for TimestampSuffixScheme {
     }
 }
 
-/// How to determine if a file should be deleted, in the case of [TimestampSuffixScheme].
+/// How to determine whether a file should be deleted, in the case of [AppendTimestamp].
 #[cfg(feature = "chrono04")]
 pub enum FileLimit {
     /// Delete the oldest files if number of files is too high
     MaxFiles(usize),
-    /// Delete files whose by their age, determined by the suffix (only works in the case that
-    /// [TimestampSuffixScheme] is used)
+    /// Delete files whose age exceeds the `Duration` - age is determined by the suffix of the file
     Age(Duration),
 }
 
@@ -297,7 +305,7 @@ mod test {
     fn scan_suffixes() {
         let working_dir = tempdir::TempDir::new("file-rotate").unwrap();
         let working_dir = working_dir.path().join("dir");
-        let suffix_scheme = TimestampSuffixScheme::default(FileLimit::Age(Duration::weeks(1)));
+        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::weeks(1)));
 
         // Test `scan_suffixes` for different possible paths given to it
         // (it used to have a bug taking e.g. "log".parent() --> panic)

@@ -13,11 +13,11 @@ Following are some supplementary examples to get started.
 ## Basic example
 
 ```rust
-use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix};
+use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount};
 use std::{fs, io::Write, path::PathBuf};
 
 fn main() {
-    let mut log = FileRotate::new("logs/log", CountSuffix::new(2), ContentLimit::Lines(3));
+    let mut log = FileRotate::new("logs/log", AppendCount::new(2), ContentLimit::Lines(3));
 
     // Write a bunch of lines
     writeln!(log, "Line 1: Hello World!");
@@ -46,7 +46,7 @@ Line 10
 ```rust
 let mut log = FileRotate::new(
     "logs/log",
-    TimestampSuffix::default(FileLimit::MaxFiles(3)),
+    AppendTimestamp::default(FileLimit::MaxFiles(3)),
     ContentLimit::Lines(3),
 );
 

@@ -1,3 +1,4 @@
+//! Compression - configuration and implementation
 use flate2::write::GzEncoder;
 use std::{
     fs::{self, File, OpenOptions},

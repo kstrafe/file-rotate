@@ -11,7 +11,7 @@
 //! We can rotate log files with the amount of lines as a limit, by using [ContentLimit::Lines].
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! // Create a new log writer. The first argument is anything resembling a path. The
@@ -24,7 +24,12 @@
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(2), ContentLimit::Lines(3), Compression::None);
+//! let mut log = FileRotate::new(
+//!     log_path.clone(),
+//!     AppendCount::new(2),
+//!     ContentLimit::Lines(3),
+//!     Compression::None
+//! );
 //!
 //! // Write a bunch of lines
 //! writeln!(log, "Line 1: Hello World!");
@@ -43,14 +48,19 @@
 //! Another method of rotation is by bytes instead of lines, with [ContentLimit::Bytes].
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new("target/my-log-directory-bytes/my-log-file", CountSuffix::new(2), ContentLimit::Bytes(5), Compression::None);
+//! let mut log = FileRotate::new(
+//!     "target/my-log-directory-bytes/my-log-file",
+//!     AppendCount::new(2),
+//!     ContentLimit::Bytes(5),
+//!     Compression::None
+//! );
 //!
 //! writeln!(log, "Test file");
 //!
@@ -67,20 +77,25 @@
 //!
 //! ## Basic count ##
 //!
-//! With [CountSuffix], when the limit is reached in the main log file, the file is moved with
+//! With [AppendCount], when the limit is reached in the main log file, the file is moved with
 //! suffix `.1`, and subsequently numbered files are moved in a cascade.
 //!
 //! Here's an example with 1 byte limits:
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::CountSuffix, compression::Compression};
+//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
 //! use std::{fs, io::Write};
 //!
 //! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), CountSuffix::new(3), ContentLimit::Bytes(1), Compression::None);
+//! let mut log = FileRotate::new(
+//!     log_path.clone(),
+//!     AppendCount::new(3),
+//!     ContentLimit::Bytes(1),
+//!     Compression::None
+//! );
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
@@ -109,12 +124,12 @@
 //!
 //! ## Timestamp suffix ##
 //!
-//! With [TimestampSuffixScheme], when the limit is reached in the main log file, the file is moved with
+//! With [AppendTimestamp], when the limit is reached in the main log file, the file is moved with
 //! suffix equal to the current timestamp (with the specified or a default format). If the
 //! destination file name already exists, `.1` (and up) is appended.
 //!
-//! Note that this works somewhat different to `CountSuffix` because of lexical ordering concerns:
-//! Higher numbers mean more recent logs, whereas `CountSuffix` works in the opposite way.
+//! Note that this works somewhat different to `AppendCount` because of lexical ordering concerns:
+//! Higher numbers mean more recent logs, whereas `AppendCount` works in the opposite way.
 //! The reason for this is to keep the lexical ordering of log names consistent: Higher lexical value
 //! means more recent.
 //! This is of course all assuming that the format start with the year (or most significant
@@ -124,7 +139,7 @@
 //! their timestamp ([FileLimit::Age]), or just maximum number of files ([FileLimit::MaxFiles]).
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::{TimestampSuffixScheme, FileLimit},
+//! use file_rotate::{FileRotate, ContentLimit, suffix::{AppendTimestamp, FileLimit},
 //! compression::Compression};
 //! use std::{fs, io::Write};
 //!
@@ -132,7 +147,12 @@
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
-//! let mut log = FileRotate::new(log_path.clone(), TimestampSuffixScheme::default(FileLimit::MaxFiles(2)), ContentLimit::Bytes(1), Compression::None);
+//! let mut log = FileRotate::new(
+//!     log_path.clone(),
+//!     AppendTimestamp::default(FileLimit::MaxFiles(2)),
+//!     ContentLimit::Bytes(1),
+//!     Compression::None
+//! );
 //!
 //! write!(log, "A");
 //! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
@@ -155,8 +175,8 @@
 //! If you use timestamps as suffix, you can also configure files to be removed as they reach a
 //! certain age. For example:
 //! ```rust
-//! use file_rotate::suffix::{TimestampSuffixScheme, FileLimit};
-//! TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1)));
+//! use file_rotate::suffix::{AppendTimestamp, FileLimit};
+//! AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1)));
 //! ```
 //!
 //! # Compression #
@@ -173,7 +193,7 @@
 //!
 //! let mut log = FileRotate::new(
 //!     "./log",
-//!     TimestampSuffixScheme::default(FileLimit::MaxFiles(4)),
+//!     AppendTimestamp::default(FileLimit::MaxFiles(4)),
 //!     ContentLimit::Bytes(1),
 //!     Compression::OnRotate(2),
 //! );
@@ -204,7 +224,7 @@
 //! # use std::path::Path;
 //! println!(
 //!     "{:#?}",
-//!     TimestampSuffixScheme::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
+//!     AppendTimestamp::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
 //! );
 //! ```
 //!
@@ -272,9 +292,7 @@ use std::{
 };
 use suffix::*;
 
-/// Compression
 pub mod compression;
-/// Suffix scheme etc
 pub mod suffix;
 #[cfg(test)]
 mod tests;
@@ -443,7 +461,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         &mut self,
         old_suffix_info: Option<SuffixInfo<S::Repr>>,
     ) -> io::Result<SuffixInfo<S::Repr>> {
-        // NOTE: this newest_suffix is there only because TimestampSuffixScheme specifically needs
+        // NOTE: this newest_suffix is there only because AppendTimestamp specifically needs
         // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
         // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
 

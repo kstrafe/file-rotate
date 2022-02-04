@@ -23,7 +23,7 @@ fn timestamp_max_files_rotation() {
 
     let mut log = FileRotate::new(
         &log_path,
-        TimestampSuffixScheme::default(FileLimit::MaxFiles(4)),
+        AppendTimestamp::default(FileLimit::MaxFiles(4)),
         ContentLimit::Lines(2),
         Compression::None,
     );
@@ -80,7 +80,7 @@ fn timestamp_max_age_deletion() {
 
     let mut log = FileRotate::new(
         &*log_path.to_string_lossy(),
-        TimestampSuffixScheme::default(FileLimit::Age(chrono::Duration::weeks(1))),
+        AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1))),
         ContentLimit::Lines(1),
         Compression::None,
     );
@@ -105,7 +105,7 @@ fn count_max_files_rotation() {
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
         &*log_path.to_string_lossy(),
-        CountSuffix::new(4),
+        AppendCount::new(4),
         ContentLimit::Lines(2),
         Compression::None,
     );
@@ -145,7 +145,7 @@ fn rotate_to_deleted_directory() {
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
         &*log_path.to_string_lossy(),
-        CountSuffix::new(4),
+        AppendCount::new(4),
         ContentLimit::Lines(1),
         Compression::None,
     );
@@ -174,7 +174,7 @@ fn write_complete_record_until_bytes_surpassed() {
 
     let mut log = FileRotate::new(
         &log_path,
-        TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
+        AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::BytesSurpassed(1),
         Compression::None,
     );
@@ -198,7 +198,7 @@ fn compression_on_rotation() {
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
         &*log_path.to_string_lossy(),
-        CountSuffix::new(3),
+        AppendCount::new(3),
         ContentLimit::Lines(1),
         Compression::OnRotate(1), // Keep one file uncompressed
     );
@@ -241,7 +241,7 @@ fn no_truncate() {
     let file_rotate = || {
         FileRotate::new(
             &*log_path.to_string_lossy(),
-            CountSuffix::new(3),
+            AppendCount::new(3),
             ContentLimit::Lines(10000),
             Compression::None,
         )
@@ -266,7 +266,7 @@ fn byte_count_recalculation() {
 
     let mut file_rotate = FileRotate::new(
         &*log_path.to_string_lossy(),
-        CountSuffix::new(3),
+        AppendCount::new(3),
         ContentLimit::Bytes(2),
         Compression::None,
     );
@@ -293,7 +293,7 @@ fn line_count_recalculation() {
 
     let mut file_rotate = FileRotate::new(
         &*log_path.to_string_lossy(),
-        CountSuffix::new(3),
+        AppendCount::new(3),
         ContentLimit::Lines(2),
         Compression::None,
     );
@@ -325,7 +325,7 @@ fn arbitrary_lines(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
+        AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Lines(count),
         Compression::None,
     );
@@ -349,7 +349,7 @@ fn arbitrary_bytes(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        TimestampSuffixScheme::default(FileLimit::MaxFiles(100)),
+        AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Bytes(count),
         Compression::None,
     );
