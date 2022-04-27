@@ -28,7 +28,9 @@
 //!     log_path.clone(),
 //!     AppendCount::new(2),
 //!     ContentLimit::Lines(3),
-//!     Compression::None
+//!     Compression::None,
+//!     #[cfg(unix)]
+//!     None,
 //! );
 //!
 //! // Write a bunch of lines
@@ -59,7 +61,9 @@
 //!     "target/my-log-directory-bytes/my-log-file",
 //!     AppendCount::new(2),
 //!     ContentLimit::Bytes(5),
-//!     Compression::None
+//!     Compression::None,
+//!     #[cfg(unix)]
+//!     None,
 //! );
 //!
 //! writeln!(log, "Test file");
@@ -94,7 +98,9 @@
 //!     log_path.clone(),
 //!     AppendCount::new(3),
 //!     ContentLimit::Bytes(1),
-//!     Compression::None
+//!     Compression::None,
+//!     #[cfg(unix)]
+//!     None,
 //! );
 //!
 //! write!(log, "A");
@@ -151,7 +157,9 @@
 //!     log_path.clone(),
 //!     AppendTimestamp::default(FileLimit::MaxFiles(2)),
 //!     ContentLimit::Bytes(1),
-//!     Compression::None
+//!     Compression::None,
+//!     #[cfg(unix)]
+//!     None,
 //! );
 //!
 //! write!(log, "A");
@@ -196,6 +204,8 @@
 //!     AppendTimestamp::default(FileLimit::MaxFiles(4)),
 //!     ContentLimit::Bytes(1),
 //!     Compression::OnRotate(2),
+//!     #[cfg(unix)]
+//!     None,
 //! );
 //!
 //! for i in 0..6 {
@@ -293,6 +303,9 @@ use std::{
 };
 use suffix::*;
 
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
 pub mod compression;
 pub mod suffix;
 #[cfg(test)]
@@ -377,6 +390,8 @@ pub struct FileRotate<S: SuffixScheme> {
     suffix_scheme: S,
     /// The bool is whether or not there's a .gz suffix to the filename
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
+    #[cfg(unix)]
+    mode: Option<u32>,
 }
 
 impl<S: SuffixScheme> FileRotate<S> {
@@ -395,6 +410,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         suffix_scheme: S,
         content_limit: ContentLimit,
         compression: Compression,
+        #[cfg(unix)] mode: Option<u32>,
     ) -> Self {
         match content_limit {
             ContentLimit::Bytes(bytes) => {
@@ -421,9 +437,12 @@ impl<S: SuffixScheme> FileRotate<S> {
             compression,
             suffixes: BTreeSet::new(),
             suffix_scheme,
+            #[cfg(unix)]
+            mode,
         };
         s.ensure_log_directory_exists();
         s.scan_suffixes();
+
         s
     }
     fn ensure_log_directory_exists(&mut self) {
@@ -434,12 +453,8 @@ impl<S: SuffixScheme> FileRotate<S> {
         }
         if !self.basepath.exists() || self.file.is_none() {
             // Open or create the file
-            self.file = OpenOptions::new()
-                .read(true)
-                .create(true)
-                .append(true)
-                .open(&self.basepath)
-                .ok();
+            self.open_file();
+
             match self.file {
                 None => self.count = 0,
                 Some(ref mut file) => {
@@ -463,6 +478,20 @@ impl<S: SuffixScheme> FileRotate<S> {
             }
         }
     }
+
+    fn open_file(&mut self) {
+        let mut open_options = OpenOptions::new();
+
+        open_options.read(true).create(true).append(true);
+
+        if let Some(mode) = self.mode {
+            #[cfg(unix)]
+            open_options.mode(mode);
+        }
+
+        self.file = open_options.open(&self.basepath).ok();
+    }
+
     fn scan_suffixes(&mut self) {
         self.suffixes = self.suffix_scheme.scan_suffixes(&self.basepath);
     }
@@ -544,7 +573,8 @@ impl<S: SuffixScheme> FileRotate<S> {
         let new_suffix_info = self.move_file_with_suffix(None)?;
         self.suffixes.insert(new_suffix_info);
 
-        self.file = Some(File::create(&self.basepath)?);
+        self.open_file();
+
         self.count = 0;
 
         self.handle_old_files()?;

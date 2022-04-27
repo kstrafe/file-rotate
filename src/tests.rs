@@ -1,4 +1,6 @@
 use super::{suffix::*, *};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use tempdir::TempDir;
 
 // Just useful to debug why test doesn't succeed
@@ -26,6 +28,8 @@ fn timestamp_max_files_rotation() {
         AppendTimestamp::default(FileLimit::MaxFiles(4)),
         ContentLimit::Lines(2),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     // Write 9 lines
@@ -83,6 +87,8 @@ fn timestamp_max_age_deletion() {
         AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1))),
         ContentLimit::Lines(1),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
     writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
 
@@ -108,6 +114,8 @@ fn count_max_files_rotation() {
         AppendCount::new(4),
         ContentLimit::Lines(2),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     // Write 9 lines
@@ -148,6 +156,8 @@ fn rotate_to_deleted_directory() {
         AppendCount::new(4),
         ContentLimit::Lines(1),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     write!(log, "a\nb\n").unwrap();
@@ -177,6 +187,8 @@ fn write_complete_record_until_bytes_surpassed() {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::BytesSurpassed(1),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     write!(log, "0123456789").unwrap();
@@ -201,6 +213,8 @@ fn compression_on_rotation() {
         AppendCount::new(3),
         ContentLimit::Lines(1),
         Compression::OnRotate(1), // Keep one file uncompressed
+        #[cfg(unix)]
+        None,
     );
 
     writeln!(log, "A").unwrap();
@@ -244,6 +258,8 @@ fn no_truncate() {
             AppendCount::new(3),
             ContentLimit::Lines(10000),
             Compression::None,
+            #[cfg(unix)]
+            None,
         )
     };
     writeln!(file_rotate(), "A").unwrap();
@@ -269,6 +285,8 @@ fn byte_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Bytes(2),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     write!(file_rotate, "bc").unwrap();
@@ -296,6 +314,8 @@ fn line_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Lines(2),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     // A single line existed before the new logger ('a')
@@ -316,6 +336,41 @@ fn line_count_recalculation() {
     assert_eq!(lines.next().unwrap().unwrap(), "c".to_string());
 }
 
+#[cfg(unix)]
+#[test]
+fn unix_file_permissions() {
+    let permissions = &[0o600, 0o644];
+
+    for permission in permissions {
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let parent = tmp_dir.path();
+        let log_path = parent.join("log");
+
+        let mut file_rotate = FileRotate::new(
+            &*log_path.to_string_lossy(),
+            AppendCount::new(3),
+            ContentLimit::Lines(2),
+            Compression::None,
+            Some(*permission),
+        );
+
+        // Trigger a rotation by writing three lines
+        writeln!(file_rotate, "a").unwrap();
+        writeln!(file_rotate, "b").unwrap();
+        writeln!(file_rotate, "c").unwrap();
+
+        assert_eq!(file_rotate.log_paths().len(), 1);
+
+        // The file created at initialization time should have the right permissions ...
+        let metadata = fs::metadata(&log_path).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, *permission);
+
+        // ... and also the one generated through a rotation
+        let metadata = fs::metadata(&file_rotate.log_paths()[0]).unwrap();
+        assert_eq!(metadata.permissions().mode() & 0o777, *permission);
+    }
+}
+
 #[quickcheck_macros::quickcheck]
 fn arbitrary_lines(count: usize) {
     let tmp_dir = TempDir::new("file-rotate-test").unwrap();
@@ -328,6 +383,8 @@ fn arbitrary_lines(count: usize) {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Lines(count),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     for _ in 0..count - 1 {
@@ -352,6 +409,8 @@ fn arbitrary_bytes(count: usize) {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Bytes(count),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     for _ in 0..count {
@@ -445,6 +504,8 @@ fn test_time_frequency(
         AppendTimestamp::with_format("%Y-%m-%d_%H-%M-%S", FileLimit::MaxFiles(7), date_from),
         ContentLimit::Time(frequency),
         Compression::None,
+        #[cfg(unix)]
+        None,
     );
 
     writeln!(log, "a").unwrap();
