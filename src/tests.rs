@@ -363,3 +363,115 @@ fn arbitrary_bytes(count: usize) {
     write!(log, "1").unwrap();
     assert!(&log.log_paths()[0].exists());
 }
+
+#[test]
+fn rotate_by_time_frequency() {
+    // Test time frequency by hours.
+    test_time_frequency(
+        "2022-05-03T06:00:12",
+        "2022-05-03T06:59:00",
+        "2022-05-03T07:01:00",
+        "2022-05-03_06-01-00",
+        TimeFrequency::Hourly,
+        DateFrom::DateHourAgo,
+    );
+
+    // Test time frequency by days.
+    test_time_frequency(
+        "2022-05-02T12:59:59",
+        "2022-05-02T23:01:15",
+        "2022-05-03T01:01:00",
+        "2022-05-02_01-01-00",
+        TimeFrequency::Daily,
+        DateFrom::DateYesterday,
+    );
+
+    // Test time frequency by weeks.
+    test_time_frequency(
+        "2022-05-02T12:34:02",
+        "2022-05-06T11:30:00",
+        "2022-05-09T13:01:00",
+        "2022-05-08_13-01-00",
+        TimeFrequency::Weekly,
+        DateFrom::DateYesterday,
+    );
+
+    // Test time frequency by months.
+    test_time_frequency(
+        "2022-03-01T11:50:01",
+        "2022-03-30T15:30:10",
+        "2022-04-02T05:03:50",
+        "2022-04-02_05-03-50",
+        TimeFrequency::Monthly,
+        DateFrom::Now,
+    );
+
+    // Test time frequency by year.
+    test_time_frequency(
+        "2021-08-31T12:34:02",
+        "2021-12-15T15:20:00",
+        "2022-09-02T13:01:00",
+        "2022-09-01_13-01-00",
+        TimeFrequency::Yearly,
+        DateFrom::DateYesterday,
+    );
+}
+
+fn get_fake_date_time(date_time: &str) -> DateTime<Local> {
+    let date_obj = NaiveDateTime::parse_from_str(date_time, "%Y-%m-%dT%H:%M:%S");
+
+    Local.from_local_datetime(&date_obj.unwrap()).unwrap()
+}
+
+fn test_time_frequency(
+    old_time: &str,
+    second_old_time: &str,
+    new_time: &str,
+    test_suffix: &str,
+    frequency: TimeFrequency,
+    date_from: DateFrom,
+) {
+    let old_time = get_fake_date_time(old_time);
+    let new_time = get_fake_date_time(new_time);
+    let second_old_time = get_fake_date_time(second_old_time);
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let dir = tmp_dir.path();
+    let log_path = dir.join("log");
+
+    mock_time::set_mock_time(old_time);
+
+    let mut log = FileRotate::new(
+        &log_path,
+        AppendTimestamp::with_format("%Y-%m-%d_%H-%M-%S", FileLimit::MaxFiles(7), date_from),
+        ContentLimit::Time(frequency),
+        Compression::None,
+    );
+
+    writeln!(log, "a").unwrap();
+    log.flush().unwrap();
+
+    filetime::set_file_mtime(
+        log_path,
+        filetime::FileTime::from_system_time(old_time.into()),
+    )
+    .unwrap();
+
+    mock_time::set_mock_time(second_old_time);
+
+    writeln!(log, "b").unwrap();
+
+    mock_time::set_mock_time(new_time);
+
+    writeln!(log, "c").unwrap();
+
+    assert!(&log.log_paths()[0].exists());
+    assert_eq!(
+        log.log_paths()[0]
+            .display()
+            .to_string()
+            .split('.')
+            .collect::<Vec<&str>>()
+            .last(),
+        Some(&test_suffix)
+    );
+}
