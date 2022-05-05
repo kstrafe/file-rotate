@@ -3,6 +3,7 @@
 //! This behaviour is fully extensible through the [SuffixScheme] trait, and two behaviours are
 //! provided: [AppendCount] and [AppendTimestamp]
 //!
+use super::now;
 use crate::SuffixInfo;
 #[cfg(feature = "chrono04")]
 use chrono::{offset::Local, Duration, NaiveDateTime};
@@ -140,6 +141,16 @@ impl SuffixScheme for AppendCount {
     }
 }
 
+/// Add timestamp from:
+pub enum DateFrom {
+    /// Date yesterday, to represent the timestamps within the log file.
+    DateYesterday,
+    /// Date from hour ago, useful with rotate hourly.
+    DateHourAgo,
+    /// Date from now.
+    Now,
+}
+
 /// Append current timestamp as suffix when rotating files.
 /// If the timestamp already exists, an additional number is appended.
 ///
@@ -152,6 +163,8 @@ pub struct AppendTimestamp {
     pub format: &'static str,
     /// The file limit, e.g. when to delete an old file - by age (given by suffix) or by number of files
     pub file_limit: FileLimit,
+    /// Add timestamp from DateFrom
+    pub date_from: DateFrom,
 }
 
 #[cfg(feature = "chrono04")]
@@ -161,11 +174,16 @@ impl AppendTimestamp {
         Self {
             format: "%Y%m%dT%H%M%S",
             file_limit,
+            date_from: DateFrom::Now,
         }
     }
     /// Create new AppendTimestamp suffix scheme
-    pub fn with_format(format: &'static str, file_limit: FileLimit) -> Self {
-        Self { format, file_limit }
+    pub fn with_format(format: &'static str, file_limit: FileLimit, date_from: DateFrom) -> Self {
+        Self {
+            format,
+            file_limit,
+            date_from,
+        }
     }
 }
 
@@ -214,10 +232,22 @@ impl SuffixScheme for AppendTimestamp {
     ) -> io::Result<TimestampSuffix> {
         assert!(suffix.is_none());
         if suffix.is_none() {
-            let now = Local::now().format(self.format).to_string();
+            let mut now = now();
+
+            match self.date_from {
+                DateFrom::DateYesterday => {
+                    now = now - Duration::days(1);
+                }
+                DateFrom::DateHourAgo => {
+                    now = now - Duration::hours(1);
+                }
+                _ => {}
+            };
+
+            let fmt_now = now.format(self.format).to_string();
 
             let number = if let Some(newest_suffix) = newest_suffix {
-                if newest_suffix.timestamp == now {
+                if newest_suffix.timestamp == fmt_now {
                     Some(newest_suffix.number.unwrap_or(0) + 1)
                 } else {
                     None
@@ -226,7 +256,7 @@ impl SuffixScheme for AppendTimestamp {
                 None
             };
             Ok(TimestampSuffix {
-                timestamp: now,
+                timestamp: fmt_now,
                 number,
             })
         } else {
