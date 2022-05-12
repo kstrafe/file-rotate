@@ -6,7 +6,7 @@
 use super::now;
 use crate::SuffixInfo;
 #[cfg(feature = "chrono04")]
-use chrono::{offset::Local, Duration, NaiveDateTime};
+use chrono::{format::ParseErrorKind, offset::Local, Duration, NaiveDateTime};
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
@@ -278,12 +278,18 @@ impl SuffixScheme for AppendTimestamp {
         } else {
             (suffix, None)
         };
-        NaiveDateTime::parse_from_str(timestamp_str, self.format)
-            .map(|_| TimestampSuffix {
+        let success = match NaiveDateTime::parse_from_str(timestamp_str, self.format) {
+            Ok(_) => true,
+            Err(e) => e.kind() == ParseErrorKind::NotEnough,
+        };
+        if success {
+            Some(TimestampSuffix {
                 timestamp: timestamp_str.to_string(),
                 number: n,
             })
-            .ok()
+        } else {
+            None
+        }
     }
     fn too_old(&self, suffix: &TimestampSuffix, file_number: usize) -> bool {
         match self.file_limit {
@@ -309,6 +315,7 @@ pub enum FileLimit {
 mod test {
     use super::*;
     use std::fs::File;
+    use tempdir::TempDir;
     #[test]
     fn timestamp_ordering() {
         assert!(
@@ -332,7 +339,7 @@ mod test {
     }
 
     #[test]
-    fn scan_suffixes() {
+    fn timestamp_scan_suffixes_base_paths() {
         let working_dir = tempdir::TempDir::new("file-rotate").unwrap();
         let working_dir = working_dir.path().join("dir");
         let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::weeks(1)));
@@ -370,6 +377,68 @@ mod test {
 
             // Cleanup
             std::fs::remove_dir_all(&working_dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn timestamp_scan_suffixes_formats() {
+        struct TestCase {
+            format: &'static str,
+            suffixes: &'static [&'static str],
+            incorrect_suffixes: &'static [&'static str],
+        }
+
+        let cases = [
+            TestCase {
+                format: "%Y%m%dT%H%M%S",
+                suffixes: &["20220201T101010", "20220202T101010"],
+                incorrect_suffixes: &["20220201T1010", "20220201T999999", "2022-02-02"],
+            },
+            TestCase {
+                format: "%Y-%m-%d",
+                suffixes: &["2022-02-01", "2022-02-02"],
+                incorrect_suffixes: &[
+                    "abc",
+                    "2022-99-99",
+                    "2022-05",
+                    "2022",
+                    "20220202",
+                    "2022-02-02T112233",
+                ],
+            },
+        ];
+
+        for (i, case) in cases.iter().enumerate() {
+            println!("Case {}", i);
+            let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+            let dir = tmp_dir.path();
+            let log_path = dir.join("file");
+
+            for suffix in case.suffixes.iter().chain(case.incorrect_suffixes) {
+                std::fs::File::create(dir.join(format!("file.{}", suffix))).unwrap();
+            }
+
+            let scheme = AppendTimestamp::with_format(
+                case.format,
+                FileLimit::MaxFiles(1),
+                DateFrom::DateYesterday,
+            );
+
+            // Scan for suffixes
+            let suffixes_set = scheme.scan_suffixes(&log_path);
+
+            // Collect these suffixes, and the expected suffixes, into Vec, and sort
+            let mut suffixes = suffixes_set
+                .into_iter()
+                .map(|x| x.suffix.to_string())
+                .collect::<Vec<_>>();
+            suffixes.sort_unstable();
+
+            let mut expected_suffixes = case.suffixes.to_vec();
+            expected_suffixes.sort_unstable();
+
+            assert_eq!(suffixes, case.suffixes);
+            println!("Passed\n");
         }
     }
 }

@@ -503,6 +503,39 @@ fn rotate_by_time_frequency() {
     );
 }
 
+#[test]
+fn test_file_limit() {
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let dir = tmp_dir.path();
+    let log_path = dir.join("file");
+    let old_file = dir.join("file.2022-02-01");
+
+    std::fs::File::create(&old_file).unwrap();
+
+    let first = get_fake_date_time("2022-02-02T01:00:00");
+    let second = get_fake_date_time("2022-02-03T01:00:00");
+    let third = get_fake_date_time("2022-02-04T01:00:00");
+
+    let mut log = FileRotate::new(
+        &log_path,
+        AppendTimestamp::with_format("%Y-%m-%d", FileLimit::MaxFiles(1), DateFrom::DateYesterday),
+        ContentLimit::Time(TimeFrequency::Daily),
+        Compression::None,
+        #[cfg(unix)]
+        None,
+    );
+
+    mock_time::set_mock_time(first);
+    writeln!(log, "1").unwrap();
+    mock_time::set_mock_time(second);
+    writeln!(log, "2").unwrap();
+    mock_time::set_mock_time(third);
+    writeln!(log, "3").unwrap();
+
+    assert_eq!(log.log_paths(), [dir.join("file.2022-02-03")]);
+    assert!(!old_file.is_file());
+}
+
 fn get_fake_date_time(date_time: &str) -> DateTime<Local> {
     let date_obj = NaiveDateTime::parse_from_str(date_time, "%Y-%m-%dT%H:%M:%S");
 
