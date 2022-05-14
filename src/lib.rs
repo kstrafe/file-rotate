@@ -484,8 +484,8 @@ impl<S: SuffixScheme> FileRotate<S> {
 
         open_options.read(true).create(true).append(true);
 
+        #[cfg(unix)]
         if let Some(mode) = self.mode {
-            #[cfg(unix)]
             open_options.mode(mode);
         }
 
