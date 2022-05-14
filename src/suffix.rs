@@ -363,6 +363,11 @@ mod test {
             let paths = suffix_scheme.scan_suffixes(relative_path);
             assert_eq!(paths.len(), 2);
 
+            // Reset CWD: necessary on Windows only - otherwise we get the error:
+            // "The process cannot access the file because it is being used by another process."
+            // (code 32)
+            std::env::set_current_dir("/").unwrap();
+
             // Cleanup
             std::fs::remove_dir_all(&working_dir).unwrap();
         }
