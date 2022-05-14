@@ -17,7 +17,7 @@ use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount};
 use std::{fs, io::Write, path::PathBuf};
 
 fn main() {
-    let mut log = FileRotate::new("logs/log", AppendCount::new(2), ContentLimit::Lines(3));
+    let mut log = FileRotate::new("logs/log", AppendCount::new(2), ContentLimit::Lines(3), None);
 
     // Write a bunch of lines
     writeln!(log, "Line 1: Hello World!");
@@ -48,6 +48,7 @@ let mut log = FileRotate::new(
     "logs/log",
     AppendTimestamp::default(FileLimit::MaxFiles(3)),
     ContentLimit::Lines(3),
+    None,
 );
 
 // Write a bunch of lines
