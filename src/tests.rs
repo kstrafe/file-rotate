@@ -1,4 +1,5 @@
 use super::{suffix::*, *};
+use std::iter::FromIterator;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tempdir::TempDir;
@@ -368,6 +369,84 @@ fn unix_file_permissions() {
         // ... and also the one generated through a rotation
         let metadata = fs::metadata(&file_rotate.log_paths()[0]).unwrap();
         assert_eq!(metadata.permissions().mode() & 0o777, *permission);
+    }
+}
+
+#[test]
+fn user_moves_log_files() {
+    // FileRotate will be able to recover if its memory of what files exist (`self.suffixes`) turns
+    // out to not be consistent with the files that are actually on disk... User or external
+    // process has changed the file listing.
+
+    let initial_suffixes = [1, 2, 3];
+
+    #[derive(Debug)]
+    enum Action {
+        Create(usize),
+        Remove(usize),
+    }
+    use Action::*;
+
+    let actions = [Create(4), Remove(1), Remove(2), Remove(3)];
+
+    for action in actions {
+        println!("{:?}", action);
+        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let dir = tmp_dir.path();
+        let log_path = dir.join("log");
+        for suffix in initial_suffixes {
+            File::create(dir.join(format!("log.{}", suffix))).unwrap();
+        }
+
+        let mut log = FileRotate::new(
+            &log_path,
+            AppendCount::new(5),
+            ContentLimit::Bytes(1),
+            Compression::None,
+            #[cfg(unix)]
+            None,
+        );
+
+        match action {
+            Create(suffix) => {
+                let name = format!("log.{}", suffix);
+                File::create(dir.join(name)).unwrap();
+            }
+            Remove(suffix) => {
+                let name = format!("log.{}", suffix);
+                std::fs::remove_file(dir.join(name)).unwrap();
+            }
+        }
+
+        write!(log, "12").unwrap();
+
+        let mut expected_set = BTreeSet::from_iter(initial_suffixes.iter().map(|x| SuffixInfo {
+            suffix: *x,
+            compressed: false,
+        }));
+        match action {
+            Create(4) => {
+                // The one that was created
+                expected_set.insert(SuffixInfo {
+                    suffix: 4,
+                    compressed: false,
+                });
+                // An additional one due to rotation
+                expected_set.insert(SuffixInfo {
+                    suffix: 5,
+                    compressed: false,
+                });
+                assert_eq!(log.suffixes, expected_set);
+            }
+            // There is only one Create(_) action that is reasonable to test
+            Create(_) => unreachable!(),
+            Remove(_) => {
+                // No matter which file we remove, we would expect rotation to create one
+                // additional file such that we end up with the same files as we started.
+                assert_eq!(expected_set, log.suffixes);
+            }
+        }
+        println!("OK");
     }
 }
 
