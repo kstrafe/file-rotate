@@ -394,6 +394,25 @@ pub struct FileRotate<S: SuffixScheme> {
     mode: Option<u32>,
 }
 
+/// Error for the function `move_file_with_suffix` - in order to
+#[derive(Debug)]
+enum MoveFileError {
+    Io(io::Error),
+    /// Safeguard for the assumption that the rotated files will not be moved/deleted
+    /// by an external process / user:
+    /// If the condition is true, that has likely happened and thus we need to call
+    /// `scan_suffixes` before trying again.
+    ///
+    /// If we were to assume said assumption, we would only call `scan_suffixes`
+    /// in FileRotate::new().
+    SuffixScanNeeded,
+}
+impl From<io::Error> for MoveFileError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
 impl<S: SuffixScheme> FileRotate<S> {
     /// Create a new [FileRotate].
     ///
@@ -507,17 +526,23 @@ impl<S: SuffixScheme> FileRotate<S> {
 
     /// Recursive function that keeps moving files if there's any file name collision.
     /// If `suffix` is `None`, it moves from basepath to next suffix given by the SuffixScheme
-    /// Assumption: Any collision in file name is due to an old log file.
     ///
     /// Returns the suffix of the new file (the last suffix after possible cascade of renames).
     fn move_file_with_suffix(
         &mut self,
         old_suffix_info: Option<SuffixInfo<S::Repr>>,
-    ) -> io::Result<SuffixInfo<S::Repr>> {
+    ) -> Result<SuffixInfo<S::Repr>, MoveFileError> {
+        let old_path = match old_suffix_info {
+            Some(ref suffix) => suffix.to_path(&self.basepath),
+            None => self.basepath.clone(),
+        };
+        if !old_path.exists() {
+            return Err(MoveFileError::SuffixScanNeeded);
+        }
+
         // NOTE: this newest_suffix is there only because AppendTimestamp specifically needs
         // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
         // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
-
         let newest_suffix = self.suffixes.iter().next().map(|info| &info.suffix);
 
         let new_suffix = self.suffix_scheme.rotate_file(
@@ -551,10 +576,9 @@ impl<S: SuffixScheme> FileRotate<S> {
             new_suffix_info
         };
 
-        let old_path = match old_suffix_info {
-            Some(suffix) => suffix.to_path(&self.basepath),
-            None => self.basepath.clone(),
-        };
+        if new_path.exists() {
+            return Err(MoveFileError::SuffixScanNeeded);
+        }
 
         // Do the move
         assert!(old_path.exists());
@@ -569,8 +593,20 @@ impl<S: SuffixScheme> FileRotate<S> {
 
         let _ = self.file.take();
 
-        // This function will always create a new file. Returns suffix of that file
-        let new_suffix_info = self.move_file_with_suffix(None)?;
+        // `move_file_with_suffix` will always (on success) create a new file and return the suffix
+        // of that file.
+        // We need a loop here in case it fails for the specific reason that `self.suffixes` is not
+        // up-to-date, and we need another scan before moving on.
+        // The only reason for such a discrepancy is external interventions in the filesystem.
+        let new_suffix_info = loop {
+            match self.move_file_with_suffix(None) {
+                Ok(x) => break x,
+                Err(MoveFileError::SuffixScanNeeded) => {
+                    self.scan_suffixes();
+                }
+                Err(MoveFileError::Io(e)) => return Err(e),
+            }
+        };
         self.suffixes.insert(new_suffix_info);
 
         self.open_file();
