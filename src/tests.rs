@@ -371,6 +371,33 @@ fn unix_file_permissions() {
     }
 }
 
+#[test]
+fn manual_rotation() {
+    // Check that manual rotation works as intented
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let parent = tmp_dir.path();
+    let log_path = parent.join("log");
+    let mut log = FileRotate::new(
+        &*log_path.to_string_lossy(),
+        AppendCount::new(3),
+        ContentLimit::None,
+        Compression::None,
+        #[cfg(unix)]
+        None,
+    );
+    writeln!(log, "A").unwrap();
+    log.rotate().unwrap();
+    list(parent);
+    writeln!(log, "B").unwrap();
+    list(parent);
+
+    dbg!(log.log_paths());
+    let logs = log.log_paths();
+    assert_eq!(logs.len(), 1);
+    assert_eq!("A\n", fs::read_to_string(&logs[0]).unwrap());
+    assert_eq!("B\n", fs::read_to_string(&log_path).unwrap());
+}
+
 #[quickcheck_macros::quickcheck]
 fn arbitrary_lines(count: usize) {
     let tmp_dir = TempDir::new("file-rotate-test").unwrap();
