@@ -339,6 +339,8 @@ pub enum ContentLimit {
     Time(TimeFrequency),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
+    /// Don't do any rotation automatically
+    None,
 }
 
 /// Used mostly internally. Info about suffix + compressed state.
@@ -423,6 +425,7 @@ impl<S: SuffixScheme> FileRotate<S> {
             ContentLimit::BytesSurpassed(bytes) => {
                 assert!(bytes > 0);
             }
+            ContentLimit::None => {}
         };
 
         let basepath = path.as_ref().to_path_buf();
@@ -473,6 +476,7 @@ impl<S: SuffixScheme> FileRotate<S> {
                         ContentLimit::Time(_) => {
                             self.modified = mtime(file);
                         }
+                        ContentLimit::None => {}
                     }
                 }
             }
@@ -564,7 +568,9 @@ impl<S: SuffixScheme> FileRotate<S> {
         Ok(newly_created_suffix)
     }
 
-    fn rotate(&mut self) -> io::Result<()> {
+    /// Trigger a log rotation manually. This is mostly intended for use with `ContentLimit::None`
+    /// but will work with all content limits.
+    pub fn rotate(&mut self) -> io::Result<()> {
         self.ensure_log_directory_exists();
 
         let _ = self.file.take();
@@ -716,6 +722,11 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                     file.write_all(buf)?;
                 }
                 self.count += buf.len();
+            }
+            ContentLimit::None => {
+                if let Some(ref mut file) = self.file {
+                    file.write_all(buf)?;
+                }
             }
         }
         Ok(written)
