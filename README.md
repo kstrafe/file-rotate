@@ -8,6 +8,9 @@ Look to the [docs](https://docs.rs/file-rotate/latest/file_rotate/index.html) fo
 * Optional compression
 * Getting a list of log files
 
+Limitations / known issues:
+* `file-rotate` assumes that no other process or user moves files around in the logging directory, but we want to find a way to [support this](https://github.com/BourgondAries/file-rotate/issues/17)
+
 Following are some supplementary examples to get started.
 
 ## Basic example
