@@ -640,7 +640,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
         match self.content_limit {
             ContentLimit::Bytes(bytes) => {
                 while self.count + buf.len() > bytes {
-                    let bytes_left = bytes - self.count;
+                    let bytes_left = bytes.saturating_sub(self.count);
                     if let Some(ref mut file) = self.file {
                         file.write_all(&buf[..bytes_left])?;
                     }

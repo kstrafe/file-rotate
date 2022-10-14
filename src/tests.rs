@@ -536,6 +536,47 @@ fn test_file_limit() {
     assert!(!old_file.is_file());
 }
 
+#[test]
+fn test_panic() {
+    use std::io::Write;
+
+    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let dir = tmp_dir.path();
+    let log_path = dir.join("file");
+    // write 9 bytes of data
+    {
+        let mut log = FileRotate::new(
+            &log_path,
+            AppendCount::new(2),
+            ContentLimit::None,
+            Compression::None,
+            #[cfg(unix)]
+            None,
+        );
+
+        write!(log, "nineteen characters").unwrap();
+    }
+
+    // set content limit to less than the existing file size
+    let mut log = FileRotate::new(
+        &log_path,
+        AppendCount::new(2),
+        ContentLimit::Bytes(8),
+        Compression::None,
+        #[cfg(unix)]
+        None,
+    );
+
+    write!(log, "0123").unwrap();
+
+    let log_paths = log.log_paths();
+    assert_eq!(
+        "nineteen characters",
+        fs::read_to_string(&log_paths[0]).unwrap()
+    );
+    assert_eq!("0123", fs::read_to_string(&log_path).unwrap());
+}
+
 fn get_fake_date_time(date_time: &str) -> DateTime<Local> {
     let date_obj = NaiveDateTime::parse_from_str(date_time, "%Y-%m-%dT%H:%M:%S");
 
