@@ -10,7 +10,7 @@ keywords= ["log", "rotate", "logrotate"]
 license = "MIT"
 
 [dependencies]
-chrono = {version = "0.4.20", optional = true }
+chrono = { version = "0.4.20", optional = true, default-features = false, features = ["clock"] }
 flate2 = "1.0"
 
 [dev-dependencies]
