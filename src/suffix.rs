@@ -315,7 +315,7 @@ pub enum FileLimit {
 mod test {
     use super::*;
     use std::fs::File;
-    use tempdir::TempDir;
+    use tempfile::TempDir;
     #[test]
     fn timestamp_ordering() {
         assert!(
@@ -340,7 +340,7 @@ mod test {
 
     #[test]
     fn timestamp_scan_suffixes_base_paths() {
-        let working_dir = tempdir::TempDir::new("file-rotate").unwrap();
+        let working_dir = TempDir::new().unwrap();
         let working_dir = working_dir.path().join("dir");
         let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::weeks(1)));
 
@@ -410,7 +410,7 @@ mod test {
 
         for (i, case) in cases.iter().enumerate() {
             println!("Case {}", i);
-            let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+            let tmp_dir = TempDir::new().unwrap();
             let dir = tmp_dir.path();
             let log_path = dir.join("file");
 

@@ -20,7 +20,7 @@
 //! // Here we choose to limit logs by 10 lines, and have at most 2 rotated log files. This
 //! // makes the total amount of log files 3, since the original file is present as well.
 //!
-//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = tempfile::TempDir::new().unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
@@ -53,7 +53,7 @@
 //! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
 //! use std::{fs, io::Write};
 //!
-//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = tempfile::TempDir::new().unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
@@ -90,7 +90,7 @@
 //! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
 //! use std::{fs, io::Write};
 //!
-//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = tempfile::TempDir::new().unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!
@@ -149,7 +149,7 @@
 //! compression::Compression};
 //! use std::{fs, io::Write};
 //!
-//! # let directory = tempdir::TempDir::new("rotation-doc-test").unwrap();
+//! # let directory = tempfile::TempDir::new().unwrap();
 //! # let directory = directory.path();
 //! let log_path = directory.join("my-log-file");
 //!

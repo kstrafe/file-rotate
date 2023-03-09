@@ -1,7 +1,7 @@
 use super::{suffix::*, *};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-use tempdir::TempDir;
+use tempfile::TempDir;
 
 // Just useful to debug why test doesn't succeed
 #[allow(dead_code)]
@@ -20,7 +20,7 @@ fn list(dir: &Path) {
 
 #[test]
 fn timestamp_max_files_rotation() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let log_path = tmp_dir.path().join("log");
 
     let mut log = FileRotate::new(
@@ -69,7 +69,7 @@ fn timestamp_max_files_rotation() {
 fn timestamp_max_age_deletion() {
     // In order not to have to sleep, and keep it deterministic, let's already create the log files and see how FileRotate
     // cleans up the old ones.
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
@@ -106,7 +106,7 @@ fn timestamp_max_age_deletion() {
 }
 #[test]
 fn count_max_files_rotation() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
@@ -148,7 +148,7 @@ fn count_max_files_rotation() {
 
 #[test]
 fn rotate_to_deleted_directory() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
@@ -178,7 +178,7 @@ fn rotate_to_deleted_directory() {
 
 #[test]
 fn write_complete_record_until_bytes_surpassed() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
@@ -205,7 +205,7 @@ fn write_complete_record_until_bytes_surpassed() {
 
 #[test]
 fn compression_on_rotation() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
@@ -249,7 +249,7 @@ fn compression_on_rotation() {
 #[test]
 fn no_truncate() {
     // Don't truncate log file if it already exists
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
     let file_rotate = || {
@@ -274,7 +274,7 @@ fn no_truncate() {
 fn byte_count_recalculation() {
     // If there is already some content in the logging file, FileRotate should set its `count`
     // field to the size of the file, so that it rotates at the right time
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
 
@@ -303,7 +303,7 @@ fn byte_count_recalculation() {
 fn line_count_recalculation() {
     // If there is already some content in the logging file, FileRotate should set its `count`
     // field to the line count of the file, so that it rotates at the right time
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
 
@@ -342,7 +342,7 @@ fn unix_file_permissions() {
     let permissions = &[0o600, 0o644];
 
     for permission in permissions {
-        let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+        let tmp_dir = TempDir::new().unwrap();
         let parent = tmp_dir.path();
         let log_path = parent.join("log");
 
@@ -374,7 +374,7 @@ fn unix_file_permissions() {
 #[test]
 fn manual_rotation() {
     // Check that manual rotation works as intented
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
     let mut log = FileRotate::new(
@@ -400,7 +400,7 @@ fn manual_rotation() {
 
 #[quickcheck_macros::quickcheck]
 fn arbitrary_lines(count: usize) {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
@@ -426,7 +426,7 @@ fn arbitrary_lines(count: usize) {
 
 #[quickcheck_macros::quickcheck]
 fn arbitrary_bytes(count: usize) {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
@@ -505,7 +505,7 @@ fn rotate_by_time_frequency() {
 
 #[test]
 fn test_file_limit() {
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("file");
     let old_file = dir.join("file.2022-02-01");
@@ -540,7 +540,7 @@ fn test_file_limit() {
 fn test_panic() {
     use std::io::Write;
 
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("file");
     // write 9 bytes of data
@@ -594,7 +594,7 @@ fn test_time_frequency(
     let old_time = get_fake_date_time(old_time);
     let new_time = get_fake_date_time(new_time);
     let second_old_time = get_fake_date_time(second_old_time);
-    let tmp_dir = TempDir::new("file-rotate-test").unwrap();
+    let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
