@@ -10,7 +10,7 @@ keywords= ["log", "rotate", "logrotate"]
 license = "MIT"
 
 [dependencies]
-chrono = { version = "0.4.20", optional = true, default-features = false, features = ["clock"] }
+chrono = { version = "0.4.20", default-features = false, features = ["clock"] }
 flate2 = "1.0"
 
 [dev-dependencies]
@@ -18,7 +18,3 @@ filetime = "0.2"
 quickcheck = "0.9.2"
 quickcheck_macros = "0.9.1"
 tempfile = "3"
-
-[features]
-default = ["chrono04"]
-chrono04 = ["chrono"]

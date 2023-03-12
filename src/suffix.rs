@@ -5,7 +5,6 @@
 //!
 use super::now;
 use crate::SuffixInfo;
-#[cfg(feature = "chrono04")]
 use chrono::{format::ParseErrorKind, offset::Local, Duration, NaiveDateTime};
 use std::{
     cmp::Ordering,
@@ -157,7 +156,6 @@ pub enum DateFrom {
 /// Current limitations:
 ///  - Neither `format` nor the base filename can include the character `"."`.
 ///  - The `format` should ensure that the lexical and chronological orderings are the same
-#[cfg(feature = "chrono04")]
 pub struct AppendTimestamp {
     /// The format of the timestamp suffix
     pub format: &'static str,
@@ -167,7 +165,6 @@ pub struct AppendTimestamp {
     pub date_from: DateFrom,
 }
 
-#[cfg(feature = "chrono04")]
 impl AppendTimestamp {
     /// With format `"%Y%m%dT%H%M%S"`
     pub fn default(file_limit: FileLimit) -> Self {
@@ -220,7 +217,6 @@ impl std::fmt::Display for TimestampSuffix {
     }
 }
 
-#[cfg(feature = "chrono04")]
 impl SuffixScheme for AppendTimestamp {
     type Repr = TimestampSuffix;
 
@@ -303,7 +299,6 @@ impl SuffixScheme for AppendTimestamp {
 }
 
 /// How to determine whether a file should be deleted, in the case of [AppendTimestamp].
-#[cfg(feature = "chrono04")]
 pub enum FileLimit {
     /// Delete the oldest files if number of files is too high
     MaxFiles(usize),
