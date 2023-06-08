@@ -16,11 +16,11 @@ Following are some supplementary examples to get started.
 ## Basic example
 
 ```rust
-use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount};
+use file_rotate::{FileRotate, ContentLimit, compression::Compression, suffix::AppendCount};
 use std::{fs, io::Write, path::PathBuf};
 
 fn main() {
-    let mut log = FileRotate::new("logs/log", AppendCount::new(2), ContentLimit::Lines(3), None);
+    let mut log = FileRotate::new("logs/log", AppendCount::new(2), ContentLimit::Lines(3), Compression::None, None);
 
     // Write a bunch of lines
     writeln!(log, "Line 1: Hello World!");
@@ -51,6 +51,7 @@ let mut log = FileRotate::new(
     "logs/log",
     AppendTimestamp::default(FileLimit::MaxFiles(3)),
     ContentLimit::Lines(3),
+    Compression::None,
     None,
 );
 
@@ -95,4 +96,3 @@ This project is licensed under the [MIT license].
 Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in file-rotate by you, shall be licensed as MIT, without any additional
 terms or conditions.
-
