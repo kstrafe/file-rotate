@@ -92,7 +92,7 @@ fn timestamp_max_age_deletion() {
     );
     writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
 
-    let mut filenames = std::fs::read_dir(dir)
+    let mut filenames = fs::read_dir(dir)
         .unwrap()
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.path().is_file())
@@ -278,7 +278,7 @@ fn byte_count_recalculation() {
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
 
-    std::fs::write(&log_path, b"a").unwrap();
+    fs::write(&log_path, b"a").unwrap();
 
     let mut file_rotate = FileRotate::new(
         &*log_path.to_string_lossy(),
@@ -292,10 +292,10 @@ fn byte_count_recalculation() {
     write!(file_rotate, "bc").unwrap();
     assert_eq!(file_rotate.log_paths().len(), 1);
     // The size of the rotated file should be 2 ('ab)
-    let rotated_content = std::fs::read(&file_rotate.log_paths()[0]).unwrap();
+    let rotated_content = fs::read(&file_rotate.log_paths()[0]).unwrap();
     assert_eq!(rotated_content, b"ab");
     // The size of the main file should be 1 ('c')
-    let main_content = std::fs::read(log_path).unwrap();
+    let main_content = fs::read(log_path).unwrap();
     assert_eq!(main_content, b"c");
 }
 
@@ -307,7 +307,7 @@ fn line_count_recalculation() {
     let parent = tmp_dir.path();
     let log_path = parent.join("log");
 
-    std::fs::write(&log_path, b"a\n").unwrap();
+    fs::write(&log_path, b"a\n").unwrap();
 
     let mut file_rotate = FileRotate::new(
         &*log_path.to_string_lossy(),
@@ -510,14 +510,14 @@ fn test_file_limit() {
     let log_path = dir.join("file");
     let old_file = dir.join("file.2022-02-01");
 
-    std::fs::File::create(&old_file).unwrap();
+    File::create(&old_file).unwrap();
 
     let first = get_fake_date_time("2022-02-02T01:00:00");
     let second = get_fake_date_time("2022-02-03T01:00:00");
     let third = get_fake_date_time("2022-02-04T01:00:00");
 
     let mut log = FileRotate::new(
-        &log_path,
+        log_path,
         AppendTimestamp::with_format("%Y-%m-%d", FileLimit::MaxFiles(1), DateFrom::DateYesterday),
         ContentLimit::Time(TimeFrequency::Daily),
         Compression::None,

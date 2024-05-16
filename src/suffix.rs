@@ -57,7 +57,7 @@ pub trait SuffixScheme {
 
     /// Find all files in the basepath.parent() directory that has path equal to basepath + a valid
     /// suffix. Return sorted collection - sorted from most recent to oldest based on the
-    /// [Ord](std::cmp::Ord) implementation of `Self::Repr`.
+    /// [Ord] implementation of `Self::Repr`.
     fn scan_suffixes(&self, basepath: &Path) -> BTreeSet<SuffixInfo<Self::Repr>> {
         let mut suffixes = BTreeSet::new();
         let filename_prefix = basepath
@@ -294,6 +294,7 @@ impl SuffixScheme for AppendTimestamp {
                 let old_timestamp = (Local::now() - age).format(self.format).to_string();
                 suffix.timestamp < old_timestamp
             }
+            FileLimit::Unlimited => false,
         }
     }
 }
@@ -304,6 +305,8 @@ pub enum FileLimit {
     MaxFiles(usize),
     /// Delete files whose age exceeds the `Duration` - age is determined by the suffix of the file
     Age(Duration),
+    /// Never delete files
+    Unlimited,
 }
 
 #[cfg(test)]
@@ -410,7 +413,7 @@ mod test {
             let log_path = dir.join("file");
 
             for suffix in case.suffixes.iter().chain(case.incorrect_suffixes) {
-                std::fs::File::create(dir.join(format!("file.{}", suffix))).unwrap();
+                File::create(dir.join(format!("file.{}", suffix))).unwrap();
             }
 
             let scheme = AppendTimestamp::with_format(
