@@ -595,7 +595,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         let mut result = Ok(());
         for (i, suffix) in self.suffixes.iter().enumerate().rev() {
             if self.suffix_scheme.too_old(&suffix.suffix, i) {
-                result = result.and(std::fs::remove_file(suffix.to_path(&self.basepath)));
+                result = result.and(fs::remove_file(suffix.to_path(&self.basepath)));
                 youngest_old = Some((*suffix).clone());
             } else {
                 break;
