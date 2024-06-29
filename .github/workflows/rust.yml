@@ -26,5 +26,11 @@ jobs:
           - os: windows-latest  
     steps:
     - uses: actions/checkout@v3
-    - name: Test
+    - name: Test (default features)
       run: cargo test
+    - name: Test (no default features)
+      run: cargo test --tests --no-default-features
+    - name: Test (compression feature only)
+      run: cargo test --tests --no-default-features --features compression
+    - name: Test (time feature only)
+      run: cargo test --tests --no-default-features --features time
