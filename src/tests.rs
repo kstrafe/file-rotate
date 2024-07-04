@@ -344,7 +344,7 @@ fn unix_file_permissions() {
             &*log_path.to_string_lossy(),
             AppendCount::new(3),
             ContentLimit::Lines(2),
-            Compression::None,
+            #[cfg(feature = "compression")] Compression::None,
             Some(*permission),
         );
 
