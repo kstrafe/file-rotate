@@ -9,9 +9,14 @@ repository = "https://github.com/kstrafe/file-rotate"
 keywords= ["log", "rotate", "logrotate"]
 license = "MIT"
 
+[features]
+default = ["time", "compression"]
+time = ["dep:chrono"]
+compression = ["dep:flate2"]
+
 [dependencies]
-chrono = { version = "0.4.20", default-features = false, features = ["clock"] }
-flate2 = "1.0"
+chrono = { version = "0.4.20", default-features = false, features = ["clock"], optional = true }
+flate2 = { version = "1.0", optional = true }
 
 [dev-dependencies]
 filetime = "0.2"

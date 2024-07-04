@@ -19,6 +19,7 @@ fn list(dir: &Path) {
 }
 
 #[test]
+#[cfg(feature = "time")]
 fn timestamp_max_files_rotation() {
     let tmp_dir = TempDir::new().unwrap();
     let log_path = tmp_dir.path().join("log");
@@ -27,9 +28,8 @@ fn timestamp_max_files_rotation() {
         &log_path,
         AppendTimestamp::default(FileLimit::MaxFiles(4)),
         ContentLimit::Lines(2),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     // Write 9 lines
@@ -113,9 +113,8 @@ fn count_max_files_rotation() {
         &*log_path.to_string_lossy(),
         AppendCount::new(4),
         ContentLimit::Lines(2),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     // Write 9 lines
@@ -155,9 +154,8 @@ fn rotate_to_deleted_directory() {
         &*log_path.to_string_lossy(),
         AppendCount::new(4),
         ContentLimit::Lines(1),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     write!(log, "a\nb\n").unwrap();
@@ -184,11 +182,10 @@ fn write_complete_record_until_bytes_surpassed() {
 
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::BytesSurpassed(1),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     write!(log, "0123456789").unwrap();
@@ -204,6 +201,7 @@ fn write_complete_record_until_bytes_surpassed() {
 }
 
 #[test]
+#[cfg(feature = "compression")]
 fn compression_on_rotation() {
     let tmp_dir = TempDir::new().unwrap();
     let parent = tmp_dir.path();
@@ -213,8 +211,7 @@ fn compression_on_rotation() {
         AppendCount::new(3),
         ContentLimit::Lines(1),
         Compression::OnRotate(1), // Keep one file uncompressed
-        #[cfg(unix)]
-        None,
+        #[cfg(unix)] None,
     );
 
     writeln!(log, "A").unwrap();
@@ -257,9 +254,8 @@ fn no_truncate() {
             &*log_path.to_string_lossy(),
             AppendCount::new(3),
             ContentLimit::Lines(10000),
-            Compression::None,
-            #[cfg(unix)]
-            None,
+            #[cfg(feature = "compression")] Compression::None,
+            #[cfg(unix)] None,
         )
     };
     writeln!(file_rotate(), "A").unwrap();
@@ -284,9 +280,8 @@ fn byte_count_recalculation() {
         &*log_path.to_string_lossy(),
         AppendCount::new(3),
         ContentLimit::Bytes(2),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     write!(file_rotate, "bc").unwrap();
@@ -313,9 +308,8 @@ fn line_count_recalculation() {
         &*log_path.to_string_lossy(),
         AppendCount::new(3),
         ContentLimit::Lines(2),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     // A single line existed before the new logger ('a')
@@ -350,7 +344,7 @@ fn unix_file_permissions() {
             &*log_path.to_string_lossy(),
             AppendCount::new(3),
             ContentLimit::Lines(2),
-            Compression::None,
+            #[cfg(feature = "compression")] Compression::None,
             Some(*permission),
         );
 
@@ -381,9 +375,8 @@ fn manual_rotation() {
         &*log_path.to_string_lossy(),
         AppendCount::new(3),
         ContentLimit::None,
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
     writeln!(log, "A").unwrap();
     log.rotate().unwrap();
@@ -407,11 +400,10 @@ fn arbitrary_lines(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::Lines(count),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     for _ in 0..count - 1 {
@@ -433,11 +425,10 @@ fn arbitrary_bytes(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::Bytes(count),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     for _ in 0..count {
@@ -451,6 +442,7 @@ fn arbitrary_bytes(count: usize) {
 }
 
 #[test]
+#[cfg(feature = "time")]
 fn rotate_by_time_frequency() {
     // Test time frequency by hours.
     test_time_frequency(
@@ -504,6 +496,7 @@ fn rotate_by_time_frequency() {
 }
 
 #[test]
+#[cfg(feature = "time")]
 fn test_file_limit() {
     let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
@@ -520,9 +513,8 @@ fn test_file_limit() {
         log_path,
         AppendTimestamp::with_format("%Y-%m-%d", FileLimit::MaxFiles(1), DateFrom::DateYesterday),
         ContentLimit::Time(TimeFrequency::Daily),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     mock_time::set_mock_time(first);
@@ -549,9 +541,8 @@ fn test_panic() {
             &log_path,
             AppendCount::new(2),
             ContentLimit::None,
-            Compression::None,
-            #[cfg(unix)]
-            None,
+            #[cfg(feature = "compression")] Compression::None,
+            #[cfg(unix)] None,
         );
 
         write!(log, "nineteen characters").unwrap();
@@ -562,9 +553,8 @@ fn test_panic() {
         &log_path,
         AppendCount::new(2),
         ContentLimit::Bytes(8),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     write!(log, "0123").unwrap();
@@ -577,12 +567,14 @@ fn test_panic() {
     assert_eq!("0123", fs::read_to_string(&log_path).unwrap());
 }
 
+#[cfg(feature = "time")]
 fn get_fake_date_time(date_time: &str) -> DateTime<Local> {
     let date_obj = NaiveDateTime::parse_from_str(date_time, "%Y-%m-%dT%H:%M:%S");
 
     Local.from_local_datetime(&date_obj.unwrap()).unwrap()
 }
 
+#[cfg(feature = "time")]
 fn test_time_frequency(
     old_time: &str,
     second_old_time: &str,
@@ -604,9 +596,8 @@ fn test_time_frequency(
         &log_path,
         AppendTimestamp::with_format("%Y-%m-%d_%H-%M-%S", FileLimit::MaxFiles(7), date_from),
         ContentLimit::Time(frequency),
-        Compression::None,
-        #[cfg(unix)]
-        None,
+        #[cfg(feature = "compression")] Compression::None,
+        #[cfg(unix)] None,
     );
 
     writeln!(log, "a").unwrap();
