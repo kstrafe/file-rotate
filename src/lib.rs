@@ -29,7 +29,6 @@
 //!     AppendCount::new(2),
 //!     ContentLimit::Lines(3),
 //!     Compression::None,
-//!     #[cfg(unix)]
 //!     None,
 //! );
 //!
@@ -62,7 +61,6 @@
 //!     AppendCount::new(2),
 //!     ContentLimit::Bytes(5),
 //!     Compression::None,
-//!     #[cfg(unix)]
 //!     None,
 //! );
 //!
@@ -99,7 +97,6 @@
 //!     AppendCount::new(3),
 //!     ContentLimit::Bytes(1),
 //!     Compression::None,
-//!     #[cfg(unix)]
 //!     None,
 //! );
 //!
@@ -158,7 +155,6 @@
 //!     AppendTimestamp::default(FileLimit::MaxFiles(2)),
 //!     ContentLimit::Bytes(1),
 //!     Compression::None,
-//!     #[cfg(unix)]
 //!     None,
 //! );
 //!
@@ -204,7 +200,6 @@
 //!     AppendTimestamp::default(FileLimit::MaxFiles(4)),
 //!     ContentLimit::Bytes(1),
 //!     Compression::OnRotate(2),
-//!     #[cfg(unix)]
 //!     None,
 //! );
 //!
@@ -303,9 +298,6 @@ use std::{
 };
 use suffix::*;
 
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
-
 pub mod compression;
 pub mod suffix;
 #[cfg(test)]
@@ -392,8 +384,7 @@ pub struct FileRotate<S: SuffixScheme> {
     suffix_scheme: S,
     /// The bool is whether or not there's a .gz suffix to the filename
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
-    #[cfg(unix)]
-    mode: Option<u32>,
+    open_options: Option<OpenOptions>,
 }
 
 impl<S: SuffixScheme> FileRotate<S> {
@@ -404,6 +395,8 @@ impl<S: SuffixScheme> FileRotate<S> {
     ///
     /// `content_limit` specifies the limits for rotating a file.
     ///
+    /// `open_options`: If provided, you must set `.read(true).create(true).append(true)`!
+    ///
     /// # Panics
     ///
     /// Panics if `bytes == 0` or `lines == 0`.
@@ -412,7 +405,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         suffix_scheme: S,
         content_limit: ContentLimit,
         compression: Compression,
-        #[cfg(unix)] mode: Option<u32>,
+        open_options: Option<OpenOptions>,
     ) -> Self {
         match content_limit {
             ContentLimit::Bytes(bytes) => {
@@ -440,8 +433,7 @@ impl<S: SuffixScheme> FileRotate<S> {
             compression,
             suffixes: BTreeSet::new(),
             suffix_scheme,
-            #[cfg(unix)]
-            mode,
+            open_options,
         };
         s.ensure_log_directory_exists();
         s.scan_suffixes();
@@ -484,14 +476,11 @@ impl<S: SuffixScheme> FileRotate<S> {
     }
 
     fn open_file(&mut self) {
-        let mut open_options = OpenOptions::new();
-
-        open_options.read(true).create(true).append(true);
-
-        #[cfg(unix)]
-        if let Some(mode) = self.mode {
-            open_options.mode(mode);
-        }
+        let open_options = self.open_options.clone().unwrap_or_else(|| {
+            let mut o = OpenOptions::new();
+            o.read(true).create(true).append(true);
+            o
+        });
 
         self.file = open_options.open(&self.basepath).ok();
     }
@@ -772,10 +761,12 @@ pub mod mock_time {
         static MOCK_TIME: RefCell<Option<DateTime<Local>>> = RefCell::new(None);
     }
 
+    /// Get current _mocked_ time
     pub fn now() -> DateTime<Local> {
         MOCK_TIME.with(|cell| cell.borrow().as_ref().cloned().unwrap_or_else(Local::now))
     }
 
+    /// Set mocked time
     pub fn set_mock_time(time: DateTime<Local>) {
         MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
     }
