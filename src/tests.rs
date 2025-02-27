@@ -28,7 +28,6 @@ fn timestamp_max_files_rotation() {
         AppendTimestamp::default(FileLimit::MaxFiles(4)),
         ContentLimit::Lines(2),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -65,7 +64,6 @@ fn timestamp_max_files_rotation() {
     assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
 }
 #[test]
-#[cfg(feature = "chrono04")]
 fn timestamp_max_age_deletion() {
     // In order not to have to sleep, and keep it deterministic, let's already create the log files and see how FileRotate
     // cleans up the old ones.
@@ -74,9 +72,7 @@ fn timestamp_max_age_deletion() {
     let log_path = dir.join("log");
 
     // One recent file:
-    let recent_file = chrono::offset::Local::now()
-        .format("log.%Y%m%dT%H%M%S")
-        .to_string();
+    let recent_file = Local::now().format("log.%Y%m%dT%H%M%S").to_string();
     File::create(dir.join(&recent_file)).unwrap();
     // Two very old files:
     File::create(dir.join("log.20200825T151133")).unwrap();
@@ -87,7 +83,6 @@ fn timestamp_max_age_deletion() {
         AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1))),
         ContentLimit::Lines(1),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
     writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
@@ -114,7 +109,6 @@ fn count_max_files_rotation() {
         AppendCount::new(4),
         ContentLimit::Lines(2),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -156,7 +150,6 @@ fn rotate_to_deleted_directory() {
         AppendCount::new(4),
         ContentLimit::Lines(1),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -187,7 +180,6 @@ fn write_complete_record_until_bytes_surpassed() {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::BytesSurpassed(1),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -213,7 +205,6 @@ fn compression_on_rotation() {
         AppendCount::new(3),
         ContentLimit::Lines(1),
         Compression::OnRotate(1), // Keep one file uncompressed
-        #[cfg(unix)]
         None,
     );
 
@@ -258,7 +249,6 @@ fn no_truncate() {
             AppendCount::new(3),
             ContentLimit::Lines(10000),
             Compression::None,
-            #[cfg(unix)]
             None,
         )
     };
@@ -285,7 +275,6 @@ fn byte_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Bytes(2),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -314,7 +303,6 @@ fn line_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Lines(2),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -339,6 +327,7 @@ fn line_count_recalculation() {
 #[cfg(unix)]
 #[test]
 fn unix_file_permissions() {
+    use std::os::unix::fs::OpenOptionsExt;
     let permissions = &[0o600, 0o644];
 
     for permission in permissions {
@@ -346,12 +335,19 @@ fn unix_file_permissions() {
         let parent = tmp_dir.path();
         let log_path = parent.join("log");
 
+        let mut options = OpenOptions::new();
+        options
+            .read(true)
+            .create(true)
+            .append(true)
+            .mode(*permission);
+
         let mut file_rotate = FileRotate::new(
             &*log_path.to_string_lossy(),
             AppendCount::new(3),
             ContentLimit::Lines(2),
             Compression::None,
-            Some(*permission),
+            Some(options),
         );
 
         // Trigger a rotation by writing three lines
@@ -382,7 +378,6 @@ fn manual_rotation() {
         AppendCount::new(3),
         ContentLimit::None,
         Compression::None,
-        #[cfg(unix)]
         None,
     );
     writeln!(log, "A").unwrap();
@@ -410,7 +405,6 @@ fn arbitrary_lines(count: usize) {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Lines(count),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -436,7 +430,6 @@ fn arbitrary_bytes(count: usize) {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Bytes(count),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -521,7 +514,6 @@ fn test_file_limit() {
         AppendTimestamp::with_format("%Y-%m-%d", FileLimit::MaxFiles(1), DateFrom::DateYesterday),
         ContentLimit::Time(TimeFrequency::Daily),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -550,7 +542,6 @@ fn test_panic() {
             AppendCount::new(2),
             ContentLimit::None,
             Compression::None,
-            #[cfg(unix)]
             None,
         );
 
@@ -563,7 +554,6 @@ fn test_panic() {
         AppendCount::new(2),
         ContentLimit::Bytes(8),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
@@ -605,7 +595,6 @@ fn test_time_frequency(
         AppendTimestamp::with_format("%Y-%m-%d_%H-%M-%S", FileLimit::MaxFiles(7), date_from),
         ContentLimit::Time(frequency),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
