@@ -30,6 +30,7 @@
 //!     ContentLimit::Lines(3),
 //!     Compression::None,
 //!     None,
+//!     None,
 //! );
 //!
 //! // Write a bunch of lines
@@ -61,6 +62,7 @@
 //!     AppendCount::new(2),
 //!     ContentLimit::Bytes(5),
 //!     Compression::None,
+//!     None,
 //!     None,
 //! );
 //!
@@ -97,6 +99,7 @@
 //!     AppendCount::new(3),
 //!     ContentLimit::Bytes(1),
 //!     Compression::None,
+//!     None,
 //!     None,
 //! );
 //!
@@ -156,6 +159,7 @@
 //!     ContentLimit::Bytes(1),
 //!     Compression::None,
 //!     None,
+//!     None,
 //! );
 //!
 //! write!(log, "A");
@@ -200,6 +204,7 @@
 //!     AppendTimestamp::default(FileLimit::MaxFiles(4)),
 //!     ContentLimit::Bytes(1),
 //!     Compression::OnRotate(2),
+//!     None,
 //!     None,
 //! );
 //!
@@ -295,6 +300,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
+    process::Command,
 };
 use suffix::*;
 
@@ -333,6 +339,15 @@ pub enum ContentLimit {
     BytesSurpassed(usize),
     /// Don't do any rotation automatically
     None,
+}
+
+/// Ownership of the file (mac only for now)
+#[derive(Debug)]
+pub struct FileOwnership {
+    /// User name or UID
+    pub owner: Option<String>,
+    /// Group name or GID
+    pub group: Option<String>,
 }
 
 /// Used mostly internally. Info about suffix + compressed state.
@@ -385,6 +400,7 @@ pub struct FileRotate<S: SuffixScheme> {
     /// The bool is whether or not there's a .gz suffix to the filename
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
     open_options: Option<OpenOptions>,
+    file_ownership: Option<FileOwnership>,
 }
 
 impl<S: SuffixScheme> FileRotate<S> {
@@ -406,6 +422,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         content_limit: ContentLimit,
         compression: Compression,
         open_options: Option<OpenOptions>,
+        file_ownership: Option<FileOwnership>,
     ) -> Self {
         match content_limit {
             ContentLimit::Bytes(bytes) => {
@@ -434,12 +451,31 @@ impl<S: SuffixScheme> FileRotate<S> {
             suffixes: BTreeSet::new(),
             suffix_scheme,
             open_options,
+            file_ownership,
         };
         s.ensure_log_directory_exists();
         s.scan_suffixes();
 
         s
     }
+
+    fn change_ownership(&self) -> io::Result<()> {
+        #[cfg(target_os = "macos")]
+        {
+            if let Some(ref ownership) = self.file_ownership {
+                let path = &self.basepath;
+
+                if let (Some(owner), Some(group)) = (&ownership.owner, &ownership.group) {
+                    Command::new("chown")
+                        .arg(format!("{}:{}", owner, group))
+                        .arg(path)
+                        .output()?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn ensure_log_directory_exists(&mut self) {
         let path = self.basepath.parent().unwrap();
         if !path.exists() {
@@ -449,6 +485,11 @@ impl<S: SuffixScheme> FileRotate<S> {
         if !self.basepath.exists() || self.file.is_none() {
             // Open or create the file
             self.open_file();
+
+            // Change ownership if specified
+            if let Err(e) = self.change_ownership() {
+                eprintln!("Failed to change ownership: {}", e);
+            }
 
             match self.file {
                 None => self.count = 0,
@@ -569,6 +610,11 @@ impl<S: SuffixScheme> FileRotate<S> {
         self.suffixes.insert(new_suffix_info);
 
         self.open_file();
+
+        // Change ownership if specified
+        if let Err(e) = self.change_ownership() {
+            eprintln!("Failed to change ownership: {}", e);
+        }
 
         self.count = 0;
 

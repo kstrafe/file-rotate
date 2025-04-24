@@ -29,6 +29,7 @@ fn timestamp_max_files_rotation() {
         ContentLimit::Lines(2),
         Compression::None,
         None,
+        None,
     );
 
     // Write 9 lines
@@ -84,6 +85,7 @@ fn timestamp_max_age_deletion() {
         ContentLimit::Lines(1),
         Compression::None,
         None,
+        None,
     );
     writeln!(log, "trigger\nat\nleast\none\nrotation").unwrap();
 
@@ -109,6 +111,7 @@ fn count_max_files_rotation() {
         AppendCount::new(4),
         ContentLimit::Lines(2),
         Compression::None,
+        None,
         None,
     );
 
@@ -151,6 +154,7 @@ fn rotate_to_deleted_directory() {
         ContentLimit::Lines(1),
         Compression::None,
         None,
+        None,
     );
 
     write!(log, "a\nb\n").unwrap();
@@ -181,6 +185,7 @@ fn write_complete_record_until_bytes_surpassed() {
         ContentLimit::BytesSurpassed(1),
         Compression::None,
         None,
+        None,
     );
 
     write!(log, "0123456789").unwrap();
@@ -205,6 +210,7 @@ fn compression_on_rotation() {
         AppendCount::new(3),
         ContentLimit::Lines(1),
         Compression::OnRotate(1), // Keep one file uncompressed
+        None,
         None,
     );
 
@@ -250,6 +256,7 @@ fn no_truncate() {
             ContentLimit::Lines(10000),
             Compression::None,
             None,
+            None,
         )
     };
     writeln!(file_rotate(), "A").unwrap();
@@ -275,6 +282,7 @@ fn byte_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Bytes(2),
         Compression::None,
+        None,
         None,
     );
 
@@ -303,6 +311,7 @@ fn line_count_recalculation() {
         AppendCount::new(3),
         ContentLimit::Lines(2),
         Compression::None,
+        None,
         None,
     );
 
@@ -348,6 +357,7 @@ fn unix_file_permissions() {
             ContentLimit::Lines(2),
             Compression::None,
             Some(options),
+            None,
         );
 
         // Trigger a rotation by writing three lines
@@ -379,6 +389,7 @@ fn manual_rotation() {
         ContentLimit::None,
         Compression::None,
         None,
+        None,
     );
     writeln!(log, "A").unwrap();
     log.rotate().unwrap();
@@ -406,6 +417,7 @@ fn arbitrary_lines(count: usize) {
         ContentLimit::Lines(count),
         Compression::None,
         None,
+        None,
     );
 
     for _ in 0..count - 1 {
@@ -430,6 +442,7 @@ fn arbitrary_bytes(count: usize) {
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
         ContentLimit::Bytes(count),
         Compression::None,
+        None,
         None,
     );
 
@@ -515,6 +528,7 @@ fn test_file_limit() {
         ContentLimit::Time(TimeFrequency::Daily),
         Compression::None,
         None,
+        None,
     );
 
     mock_time::set_mock_time(first);
@@ -543,6 +557,7 @@ fn test_panic() {
             ContentLimit::None,
             Compression::None,
             None,
+            None,
         );
 
         write!(log, "nineteen characters").unwrap();
@@ -554,6 +569,7 @@ fn test_panic() {
         AppendCount::new(2),
         ContentLimit::Bytes(8),
         Compression::None,
+        None,
         None,
     );
 
@@ -595,6 +611,7 @@ fn test_time_frequency(
         AppendTimestamp::with_format("%Y-%m-%d_%H-%M-%S", FileLimit::MaxFiles(7), date_from),
         ContentLimit::Time(frequency),
         Compression::None,
+        None,
         None,
     );
 

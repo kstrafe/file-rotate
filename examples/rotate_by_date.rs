@@ -12,6 +12,7 @@ fn main() {
         ContentLimit::Time(TimeFrequency::Daily),
         Compression::None,
         None,
+        None,
     );
 
     // Write a bunch of lines
