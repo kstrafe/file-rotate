@@ -3,8 +3,10 @@
 //! This behaviour is fully extensible through the [SuffixScheme] trait, and two behaviours are
 //! provided: [AppendCount] and [AppendTimestamp]
 //!
+#[cfg(feature = "time")]
 use super::now;
 use crate::SuffixInfo;
+#[cfg(feature = "time")]
 use chrono::{format::ParseErrorKind, offset::Local, Duration, NaiveDateTime};
 use std::{
     cmp::Ordering,
@@ -156,6 +158,7 @@ pub enum DateFrom {
 /// Current limitations:
 ///  - Neither `format` nor the base filename can include the character `"."`.
 ///  - The `format` should ensure that the lexical and chronological orderings are the same
+#[cfg(feature = "time")]
 pub struct AppendTimestamp {
     /// The format of the timestamp suffix
     pub format: &'static str,
@@ -165,6 +168,7 @@ pub struct AppendTimestamp {
     pub date_from: DateFrom,
 }
 
+#[cfg(feature = "time")]
 impl AppendTimestamp {
     /// With format `"%Y%m%dT%H%M%S"`
     pub fn default(file_limit: FileLimit) -> Self {
@@ -217,6 +221,7 @@ impl std::fmt::Display for TimestampSuffix {
     }
 }
 
+#[cfg(feature = "time")]
 impl SuffixScheme for AppendTimestamp {
     type Repr = TimestampSuffix;
 
@@ -304,6 +309,7 @@ pub enum FileLimit {
     /// Delete the oldest files if number of files is too high
     MaxFiles(usize),
     /// Delete files whose age exceeds the `Duration` - age is determined by the suffix of the file
+    #[cfg(feature = "time")]
     Age(Duration),
     /// Never delete files
     Unlimited,
@@ -337,6 +343,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "time")]
     fn timestamp_scan_suffixes_base_paths() {
         let working_dir = TempDir::new().unwrap();
         let working_dir = working_dir.path().join("dir");
@@ -379,6 +386,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "time")]
     fn timestamp_scan_suffixes_formats() {
         struct TestCase {
             format: &'static str,

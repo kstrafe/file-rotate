@@ -25,7 +25,7 @@ fn timestamp_max_files_rotation() {
 
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(4)),
+        AppendCount::new(4),
         ContentLimit::Lines(2),
         Compression::None,
         None,
@@ -40,6 +40,7 @@ fn timestamp_max_files_rotation() {
     // Log names should be sorted. Low (old timestamp) to high (more recent timestamp)
     let mut log_paths_sorted = log_paths.clone();
     log_paths_sorted.sort();
+    log_paths_sorted.reverse();
     assert_eq!(log_paths, log_paths_sorted);
 
     assert_eq!("a\nb\n", fs::read_to_string(&log_paths[0]).unwrap());
@@ -54,6 +55,7 @@ fn timestamp_max_files_rotation() {
     assert_eq!(log_paths.len(), 4);
     let mut log_paths_sorted = log_paths.clone();
     log_paths_sorted.sort();
+    log_paths_sorted.reverse();
     assert_eq!(log_paths, log_paths_sorted);
 
     list(tmp_dir.path());
@@ -63,7 +65,9 @@ fn timestamp_max_files_rotation() {
     assert_eq!("k\nl\n", fs::read_to_string(&log_paths[3]).unwrap());
     assert_eq!("m\n", fs::read_to_string(&log_path).unwrap());
 }
+
 #[test]
+#[cfg(feature = "time")]
 fn timestamp_max_age_deletion() {
     // In order not to have to sleep, and keep it deterministic, let's already create the log files and see how FileRotate
     // cleans up the old ones.
@@ -177,7 +181,7 @@ fn write_complete_record_until_bytes_surpassed() {
 
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::BytesSurpassed(1),
         Compression::None,
         None,
@@ -215,6 +219,7 @@ fn compression_on_rotation() {
 
     let log_paths = log.log_paths();
 
+    #[cfg(feature = "compression")]
     assert_eq!(
         log_paths,
         vec![
@@ -224,14 +229,32 @@ fn compression_on_rotation() {
         ]
     );
 
+    #[cfg(not(feature = "compression"))]
+    assert_eq!(
+        log_paths,
+        vec![
+            parent.join("log.3"),
+            parent.join("log.2"),
+            parent.join("log.1"),
+        ]
+    );
+
+
     assert_eq!("", fs::read_to_string(&log_path).unwrap());
 
+    #[cfg(feature = "compression")]
     fn compress(text: &str) -> Vec<u8> {
         let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
 
         encoder.write_all(text.as_bytes()).unwrap();
         encoder.finish().unwrap()
     }
+
+    #[cfg(not(feature = "compression"))]
+    fn compress(text: &str) -> Vec<u8> {
+        text.as_bytes().to_vec()
+    }
+
     assert_eq!(compress("A\n"), fs::read(&log.log_paths()[0]).unwrap());
     assert_eq!(compress("B\n"), fs::read(&log.log_paths()[1]).unwrap());
     assert_eq!("C\n", fs::read_to_string(&log.log_paths()[2]).unwrap());
@@ -402,7 +425,7 @@ fn arbitrary_lines(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::Lines(count),
         Compression::None,
         None,
@@ -427,7 +450,7 @@ fn arbitrary_bytes(count: usize) {
     let count = count.max(1);
     let mut log = FileRotate::new(
         &log_path,
-        AppendTimestamp::default(FileLimit::MaxFiles(100)),
+        AppendCount::new(100),
         ContentLimit::Bytes(count),
         Compression::None,
         None,
@@ -444,6 +467,7 @@ fn arbitrary_bytes(count: usize) {
 }
 
 #[test]
+#[cfg(feature = "time")]
 fn rotate_by_time_frequency() {
     // Test time frequency by hours.
     test_time_frequency(
@@ -497,6 +521,7 @@ fn rotate_by_time_frequency() {
 }
 
 #[test]
+#[cfg(feature = "time")]
 fn test_file_limit() {
     let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
@@ -567,12 +592,14 @@ fn test_panic() {
     assert_eq!("0123", fs::read_to_string(&log_path).unwrap());
 }
 
+#[cfg(feature = "time")]
 fn get_fake_date_time(date_time: &str) -> DateTime<Local> {
     let date_obj = NaiveDateTime::parse_from_str(date_time, "%Y-%m-%dT%H:%M:%S");
 
     Local.from_local_datetime(&date_obj.unwrap()).unwrap()
 }
 
+#[cfg(feature = "time")]
 fn test_time_frequency(
     old_time: &str,
     second_old_time: &str,
