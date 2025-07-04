@@ -286,6 +286,8 @@
     unused_qualifications
 )]
 
+
+#[cfg(feature = "time")]
 use chrono::prelude::*;
 use compression::*;
 use std::io::{BufRead, BufReader};
@@ -328,6 +330,7 @@ pub enum ContentLimit {
     /// Cut the log file at line breaks.
     Lines(usize),
     /// Cut the log at time interval.
+    /// If the `time` feature is not enabled no file rotation will be performed, same as in [`ContentLimit::None`].
     Time(TimeFrequency),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
@@ -377,6 +380,7 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
+    #[cfg(feature = "time")]
     modified: Option<DateTime<Local>>,
     content_limit: ContentLimit,
     count: usize,
@@ -426,6 +430,7 @@ impl<S: SuffixScheme> FileRotate<S> {
 
         let mut s = Self {
             file: None,
+            #[cfg(feature = "time")]
             modified: None,
             basepath,
             content_limit,
@@ -466,7 +471,10 @@ impl<S: SuffixScheme> FileRotate<S> {
                             self.count = BufReader::new(file).lines().count();
                         }
                         ContentLimit::Time(_) => {
-                            self.modified = mtime(file);
+                            #[cfg(feature = "time")]
+                            {
+                                self.modified = mtime(file);
+                            }
                         }
                         ContentLimit::None => {}
                     }
@@ -596,6 +604,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         }
 
         // Compression
+        #[cfg(feature = "compression")]
         if let Compression::OnRotate(max_file_n) = self.compression {
             let n = (self.suffixes.len() as i32 - max_file_n as i32).max(0) as usize;
             // The oldest N files should be compressed
@@ -642,49 +651,58 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                 }
             }
             ContentLimit::Time(time) => {
-                let local: DateTime<Local> = now();
+                #[cfg(feature = "time")]
+                {
+                    let local: DateTime<Local> = now();
 
-                if let Some(modified) = self.modified {
-                    match time {
-                        TimeFrequency::Hourly => {
-                            if local.hour() != modified.hour()
-                                || local.day() != modified.day()
-                                || local.month() != modified.month()
-                                || local.year() != modified.year()
-                            {
-                                self.rotate()?;
+                    if let Some(modified) = self.modified {
+                        match time {
+                            TimeFrequency::Hourly => {
+                                if local.hour() != modified.hour()
+                                    || local.day() != modified.day()
+                                    || local.month() != modified.month()
+                                    || local.year() != modified.year()
+                                {
+                                    self.rotate()?;
+                                }
                             }
-                        }
-                        TimeFrequency::Daily => {
-                            if local.date() > modified.date() {
-                                self.rotate()?;
+                            TimeFrequency::Daily => {
+                                if local.date() > modified.date() {
+                                    self.rotate()?;
+                                }
                             }
-                        }
-                        TimeFrequency::Weekly => {
-                            if local.iso_week().week() != modified.iso_week().week()
-                                || local.year() > modified.year()
-                            {
-                                self.rotate()?;
+                            TimeFrequency::Weekly => {
+                                if local.iso_week().week() != modified.iso_week().week()
+                                    || local.year() > modified.year()
+                                {
+                                    self.rotate()?;
+                                }
                             }
-                        }
-                        TimeFrequency::Monthly => {
-                            if local.month() != modified.month() || local.year() != modified.year()
-                            {
-                                self.rotate()?;
+                            TimeFrequency::Monthly => {
+                                if local.month() != modified.month() || local.year() != modified.year()
+                                {
+                                    self.rotate()?;
+                                }
                             }
-                        }
-                        TimeFrequency::Yearly => {
-                            if local.year() > modified.year() {
-                                self.rotate()?;
+                            TimeFrequency::Yearly => {
+                                if local.year() > modified.year() {
+                                    self.rotate()?;
+                                }
                             }
                         }
                     }
+
+                    if let Some(ref mut file) = self.file {
+                        file.write_all(buf)?;
+                        self.modified = Some(local);
+                    }
                 }
 
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
-
-                    self.modified = Some(local);
+                #[cfg(not(feature = "time"))]
+                {
+                    if let Some(ref mut file) = self.file {
+                        file.write_all(buf)?;
+                    }
                 }
             }
             ContentLimit::Lines(lines) => {
@@ -731,6 +749,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
 
 /// Get modification time, in non test case.
 #[cfg(not(test))]
+#[cfg(feature = "time")]
 fn mtime(file: &File) -> Option<DateTime<Local>> {
     if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
         return Some(time.into());
@@ -741,18 +760,21 @@ fn mtime(file: &File) -> Option<DateTime<Local>> {
 
 /// Get modification time, in test case.
 #[cfg(test)]
+#[cfg(feature = "time")]
 fn mtime(_: &File) -> Option<DateTime<Local>> {
     Some(now())
 }
 
 /// Get system time, in non test case.
 #[cfg(not(test))]
+#[cfg(feature = "time")]
 fn now() -> DateTime<Local> {
     Local::now()
 }
 
 /// Get mocked system time, in test case.
 #[cfg(test)]
+#[cfg(feature = "time")]
 pub mod mock_time {
     use super::*;
     use std::cell::RefCell;
@@ -773,4 +795,5 @@ pub mod mock_time {
 }
 
 #[cfg(test)]
+#[cfg(feature = "time")]
 pub use mock_time::now;
