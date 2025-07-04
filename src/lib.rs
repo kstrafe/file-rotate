@@ -291,9 +291,7 @@
     unused_qualifications
 )]
 
-#[cfg(feature = "time")]
 use chrono::prelude::*;
-#[cfg(feature = "compression")]
 use compression::*;
 use std::io::{BufRead, BufReader};
 use std::{
@@ -308,7 +306,6 @@ use suffix::*;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
-#[cfg(feature = "compression")]
 pub mod compression;
 pub mod suffix;
 #[cfg(test)]
@@ -318,7 +315,6 @@ mod tests;
 
 /// At which frequency to rotate the file.
 #[derive(Clone, Copy, Debug)]
-#[cfg(feature = "time")]
 pub enum TimeFrequency {
     /// Rotate every hour.
     Hourly,
@@ -340,7 +336,6 @@ pub enum ContentLimit {
     /// Cut the log file at line breaks.
     Lines(usize),
     /// Cut the log at time interval.
-    #[cfg(feature = "time")]
     Time(TimeFrequency),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
@@ -390,14 +385,15 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
-    #[cfg(feature = "time")] modified: Option<DateTime<Local>>,
+    modified: Option<DateTime<Local>>,
     content_limit: ContentLimit,
     count: usize,
-    #[cfg(feature = "compression")] compression: Compression,
+    compression: Compression,
     suffix_scheme: S,
     /// The bool is whether or not there's a .gz suffix to the filename
     suffixes: BTreeSet<SuffixInfo<S::Repr>>,
-    #[cfg(unix)] mode: Option<u32>,
+    #[cfg(unix)]
+    mode: Option<u32>,
 }
 
 impl<S: SuffixScheme> FileRotate<S> {
@@ -415,7 +411,7 @@ impl<S: SuffixScheme> FileRotate<S> {
         path: P,
         suffix_scheme: S,
         content_limit: ContentLimit,
-        #[cfg(feature = "compression")] compression: Compression,
+        compression: Compression,
         #[cfg(unix)] mode: Option<u32>,
     ) -> Self {
         match content_limit {
@@ -425,7 +421,7 @@ impl<S: SuffixScheme> FileRotate<S> {
             ContentLimit::Lines(lines) => {
                 assert!(lines > 0);
             }
-            #[cfg(feature = "time")] ContentLimit::Time(_) => {}
+            ContentLimit::Time(_) => {}
             ContentLimit::BytesSurpassed(bytes) => {
                 assert!(bytes > 0);
             }
@@ -437,14 +433,15 @@ impl<S: SuffixScheme> FileRotate<S> {
 
         let mut s = Self {
             file: None,
-            #[cfg(feature = "time")] modified: None,
+            modified: None,
             basepath,
             content_limit,
             count: 0,
-            #[cfg(feature = "compression")] compression,
+            compression,
             suffixes: BTreeSet::new(),
             suffix_scheme,
-            #[cfg(unix)] mode,
+            #[cfg(unix)]
+            mode,
         };
         s.ensure_log_directory_exists();
         s.scan_suffixes();
@@ -476,7 +473,6 @@ impl<S: SuffixScheme> FileRotate<S> {
                         ContentLimit::Lines(_) => {
                             self.count = BufReader::new(file).lines().count();
                         }
-                        #[cfg(feature = "time")]
                         ContentLimit::Time(_) => {
                             self.modified = mtime(file);
                         }
@@ -611,7 +607,6 @@ impl<S: SuffixScheme> FileRotate<S> {
         }
 
         // Compression
-        #[cfg(feature = "compression")]
         if let Compression::OnRotate(max_file_n) = self.compression {
             let n = (self.suffixes.len() as i32 - max_file_n as i32).max(0) as usize;
             // The oldest N files should be compressed
@@ -657,7 +652,6 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                     file.write_all(buf)?;
                 }
             }
-            #[cfg(feature = "time")]
             ContentLimit::Time(time) => {
                 let local: DateTime<Local> = now();
 
@@ -747,7 +741,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
 }
 
 /// Get modification time, in non test case.
-#[cfg(all(not(test), feature = "time"))]
+#[cfg(not(test))]
 fn mtime(file: &File) -> Option<DateTime<Local>> {
     if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
         return Some(time.into());
@@ -757,19 +751,19 @@ fn mtime(file: &File) -> Option<DateTime<Local>> {
 }
 
 /// Get modification time, in test case.
-#[cfg(all(test, feature = "time"))]
+#[cfg(test)]
 fn mtime(_: &File) -> Option<DateTime<Local>> {
     Some(now())
 }
 
 /// Get system time, in non test case.
-#[cfg(all(not(test), feature = "time"))]
+#[cfg(not(test))]
 fn now() -> DateTime<Local> {
     Local::now()
 }
 
 /// Get mocked system time, in test case.
-#[cfg(all(test, feature = "time"))]
+#[cfg(test)]
 pub mod mock_time {
     use super::*;
     use std::cell::RefCell;
@@ -787,5 +781,5 @@ pub mod mock_time {
     }
 }
 
-#[cfg(all(test, feature = "time"))]
+#[cfg(test)]
 pub use mock_time::now;
