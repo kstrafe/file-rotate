@@ -11,7 +11,6 @@ fn main() {
         AppendTimestamp::with_format("%Y-%m-%d", FileLimit::MaxFiles(7), DateFrom::DateYesterday),
         ContentLimit::Time(TimeFrequency::Daily),
         Compression::None,
-        #[cfg(unix)]
         None,
     );
 
