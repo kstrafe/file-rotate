@@ -299,6 +299,7 @@ use std::{
 use suffix::*;
 
 pub mod compression;
+pub mod experimental;
 pub mod suffix;
 #[cfg(test)]
 mod tests;
