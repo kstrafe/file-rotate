@@ -9,7 +9,7 @@ trait Rotator {
     /// Takes the previous file (None if the initial file), and returns a new file.
     ///
     /// Only runs when `Trigger` decides it's time to perform a rotation.
-    fn rotate(&mut self, current: Option<File>) -> File;
+    fn rotate(&mut self, current: Option<File>) -> io::Result<File>;
 }
 
 trait Trigger {
@@ -30,17 +30,17 @@ pub struct FileRotate {
 }
 
 impl FileRotate {
-    fn new<R, T>(mut rotator: R, trigger: T) -> Self
+    fn new<R, T>(mut rotator: R, trigger: T) -> io::Result<Self>
     where
         R: Rotator + 'static,
         T: Trigger + 'static,
     {
-        let file = Some(rotator.rotate(None));
-        Self {
+        let file = Some(rotator.rotate(None)?);
+        Ok(Self {
             file,
             rotator: Box::new(rotator),
             trigger: Box::new(trigger),
-        }
+        })
     }
 }
 
@@ -50,12 +50,11 @@ impl Write for FileRotate {
         loop {
             match self.trigger.trigger(&buf[begin..]) {
                 Action::Rotate { consumed } => {
-                    println!("begin={} consumed={}", begin, consumed);
                     self.file
                         .as_mut()
                         .unwrap()
                         .write_all(&buf[begin..begin + consumed])?;
-                    self.file = Some(self.rotator.rotate(self.file.take()));
+                    self.file = Some(self.rotator.rotate(self.file.take())?);
                     begin += consumed;
                 }
                 Action::None => {
@@ -77,6 +76,21 @@ mod triggers {
     pub struct Bytes {
         pub count: usize,
         pub limit: usize,
+    }
+
+    impl Bytes {
+        pub fn new() -> Self {
+            let byte_count_1_MiB = 1048576;
+            Self {
+                count: 0,
+                limit: byte_count_1_MiB,
+            }
+        }
+
+        pub fn limit(mut self, bytes: usize) -> Self {
+            self.limit = bytes;
+            self
+        }
     }
 
     impl Trigger for Bytes {
@@ -101,19 +115,30 @@ mod rotators {
     use super::*;
 
     pub struct NumberedSuffix {
-        pub current: usize,
-        pub max: usize,
+        current: usize,
+        max: usize,
+    }
+
+    impl NumberedSuffix {
+        pub fn new() -> Self {
+            Self { current: 0, max: 0 }
+        }
+
+        pub fn max(mut self, max: usize) -> Self {
+            self.max = max;
+            self
+        }
     }
 
     impl Rotator for NumberedSuffix {
-        fn rotate(&mut self, file: Option<File>) -> File {
+        fn rotate(&mut self, file: Option<File>) -> io::Result<File> {
             if file.is_none() {
-                return File::create("foo.0").unwrap();
+                return File::create("foo.0");
             }
 
             self.current += 1;
             self.current %= self.max + 1;
-            File::create(format!("foo.{}", self.current)).unwrap()
+            File::create(format!("foo.{}", self.current))
         }
     }
 }
@@ -121,12 +146,9 @@ mod rotators {
 #[test]
 fn basic() {
     use std::fs;
-    let rotator = rotators::NumberedSuffix { current: 0, max: 3 };
-    let trigger = triggers::Bytes {
-        count: 0,
-        limit: 10,
-    };
-    let mut fr = FileRotate::new(rotator, trigger);
+    let rotator = rotators::NumberedSuffix::new().max(3);
+    let trigger = triggers::Bytes::new().limit(10);
+    let mut fr = FileRotate::new(rotator, trigger).unwrap();
 
     write!(fr, "abcdefghijklmnopqrstuvwxyz0123456789").unwrap();
 
