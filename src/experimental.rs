@@ -5,15 +5,17 @@ use std::{
     io::{self, Write},
 };
 
+// Handles *how* to rotate.
 trait Rotator {
     /// Takes the previous file (None if the initial file), and returns a new file.
     ///
-    /// Only runs when `Trigger` decides it's time to perform a rotation.
+    /// Only runs when `Trigger` returns [Action::Rotate].
     fn rotate(&mut self, current: Option<File>) -> io::Result<File>;
 }
 
+// Handles *when* to rotate.
 trait Trigger {
-    /// Counts properties of the output stream and decides whether to perform a rotation or not.
+    /// Called for every [write]. Counts properties of the output stream and decides whether to perform a rotation or not.
     fn trigger(&mut self, bytes: &[u8]) -> Action;
 }
 
@@ -22,7 +24,7 @@ enum Action {
     None,
 }
 
-/// d
+/// The main writer used for rotating logs.
 pub struct FileRotate {
     file: Option<File>,
     rotator: Box<dyn Rotator>,
@@ -50,24 +52,36 @@ impl Write for FileRotate {
         loop {
             match self.trigger.trigger(&buf[begin..]) {
                 Action::Rotate { consumed } => {
-                    self.file
-                        .as_mut()
-                        .unwrap()
-                        .write_all(&buf[begin..begin + consumed])?;
+                    if let Some(file) = self.file.as_mut() {
+                        file.write_all(&buf[begin..begin + consumed])?;
+                    }
                     self.file = Some(self.rotator.rotate(self.file.take())?);
                     begin += consumed;
                 }
                 Action::None => {
-                    self.file.as_mut().unwrap().write_all(&buf[begin..])?;
-                    return Ok(buf.len());
+                    if let Some(file) = self.file.as_mut() {
+                        file.write_all(&buf[begin..])?;
+                        return Ok(buf.len());
+                    } else {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            "File missing during write",
+                        ));
+                    }
                 }
             }
         }
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        let file = self.file.as_mut().unwrap();
-        file.flush()
+        if let Some(file) = self.file.as_mut() {
+            file.flush()
+        } else {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                "File missing during flush",
+            ));
+        }
     }
 }
 
@@ -80,10 +94,10 @@ mod triggers {
 
     impl Bytes {
         pub fn new() -> Self {
-            let byte_count_1_MiB = 1048576;
+            let byte_count_1_mib = 1048576;
             Self {
                 count: 0,
-                limit: byte_count_1_MiB,
+                limit: byte_count_1_mib,
             }
         }
 
@@ -156,4 +170,11 @@ fn basic() {
     assert_eq!("klmnopqrst", fs::read_to_string("foo.1").unwrap());
     assert_eq!("uvwxyz0123", fs::read_to_string("foo.2").unwrap());
     assert_eq!("456789", fs::read_to_string("foo.3").unwrap());
+
+    write!(fr, "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*[]_+").unwrap();
+
+    assert_eq!("EFGHIJKLMN", fs::read_to_string("foo.0").unwrap());
+    assert_eq!("OPQRSTUVWX", fs::read_to_string("foo.1").unwrap());
+    assert_eq!("YZ!@#$%^&*", fs::read_to_string("foo.2").unwrap());
+    assert_eq!("[]_+", fs::read_to_string("foo.3").unwrap());
 }
