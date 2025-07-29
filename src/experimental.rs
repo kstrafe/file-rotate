@@ -5,48 +5,63 @@ use std::{
     io::{self, Write},
 };
 
-// Handles *how* to rotate.
-trait Rotator {
+mod triggers;
+mod rotators;
+
+/// Handles *how* to rotate.
+pub trait Rotator {
     /// Takes the previous file (None if the initial file), and returns a new file.
     ///
     /// Only runs when `Trigger` returns [Action::Rotate].
     fn rotate(&mut self, current: Option<File>) -> io::Result<File>;
 }
 
-// Handles *when* to rotate.
-trait Trigger {
+/// Handles *when* to rotate.
+pub trait Trigger {
     /// Called for every [write]. Counts properties of the output stream and decides whether to perform a rotation or not.
     fn trigger(&mut self, bytes: &[u8]) -> Action;
 }
 
-enum Action {
-    Rotate { consumed: usize },
+/// Decides whether to trigger a log rotation.
+pub enum Action {
+    /// Rotate the log file, reporting how many bytes the current log has consumed from the
+    /// buffer to write to the log file. The remaining bytes will be written to the new log.
+    Rotate {
+        /// Amount of bytes that were written from the buffer to the file before rotation.
+        consumed: usize
+    },
+    /// Do not perform a log rotation.
     None,
 }
 
 /// The main writer used for rotating logs.
-pub struct FileRotate {
+pub struct FileRotate<R, T>
+where
+    R: Rotator,
+    T: Trigger,
+{
     file: Option<File>,
-    rotator: Box<dyn Rotator>,
-    trigger: Box<dyn Trigger>,
+    rotator: R,
+    trigger: T,
 }
 
-impl FileRotate {
-    fn new<R, T>(mut rotator: R, trigger: T) -> io::Result<Self>
-    where
-        R: Rotator + 'static,
-        T: Trigger + 'static,
+impl<R, T> FileRotate<R, T>
+where R: Rotator,
+      T: Trigger,
+{
+    fn new(mut rotator: R, trigger: T) -> io::Result<Self>
     {
         let file = Some(rotator.rotate(None)?);
         Ok(Self {
             file,
-            rotator: Box::new(rotator),
-            trigger: Box::new(trigger),
+            rotator,
+            trigger,
         })
     }
 }
 
-impl Write for FileRotate {
+impl<R, T> Write for FileRotate<R, T>
+where R: Rotator, T: Trigger, {
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         let mut begin = 0;
         loop {
@@ -81,78 +96,6 @@ impl Write for FileRotate {
                 io::ErrorKind::Other,
                 "File missing during flush",
             ));
-        }
-    }
-}
-
-mod triggers {
-    use super::*;
-    pub struct Bytes {
-        pub count: usize,
-        pub limit: usize,
-    }
-
-    impl Bytes {
-        pub fn new() -> Self {
-            let byte_count_1_mib = 1048576;
-            Self {
-                count: 0,
-                limit: byte_count_1_mib,
-            }
-        }
-
-        pub fn limit(mut self, bytes: usize) -> Self {
-            self.limit = bytes;
-            self
-        }
-    }
-
-    impl Trigger for Bytes {
-        fn trigger(&mut self, bytes: &[u8]) -> Action {
-            if self.count + bytes.len() > self.limit {
-                println!(
-                    "consumed: self.limit={} self.count={}",
-                    self.limit, self.count
-                );
-                let consumed = self.limit - self.count;
-                self.count = 0;
-                Action::Rotate { consumed }
-            } else {
-                self.count += bytes.len();
-                Action::None
-            }
-        }
-    }
-}
-
-mod rotators {
-    use super::*;
-
-    pub struct NumberedSuffix {
-        current: usize,
-        max: usize,
-    }
-
-    impl NumberedSuffix {
-        pub fn new() -> Self {
-            Self { current: 0, max: 0 }
-        }
-
-        pub fn max(mut self, max: usize) -> Self {
-            self.max = max;
-            self
-        }
-    }
-
-    impl Rotator for NumberedSuffix {
-        fn rotate(&mut self, file: Option<File>) -> io::Result<File> {
-            if file.is_none() {
-                return File::create("foo.0");
-            }
-
-            self.current += 1;
-            self.current %= self.max + 1;
-            File::create(format!("foo.{}", self.current))
         }
     }
 }
