@@ -5,8 +5,8 @@ use std::{
     io::{self, Write},
 };
 
-mod triggers;
 mod rotators;
+mod triggers;
 
 /// Handles *how* to rotate.
 pub trait Rotator {
@@ -28,7 +28,7 @@ pub enum Action {
     /// buffer to write to the log file. The remaining bytes will be written to the new log.
     Rotate {
         /// Amount of bytes that were written from the buffer to the file before rotation.
-        consumed: usize
+        consumed: usize,
     },
     /// Do not perform a log rotation.
     None,
@@ -46,11 +46,11 @@ where
 }
 
 impl<R, T> FileRotate<R, T>
-where R: Rotator,
-      T: Trigger,
+where
+    R: Rotator,
+    T: Trigger,
 {
-    fn new(mut rotator: R, trigger: T) -> io::Result<Self>
-    {
+    fn new(mut rotator: R, trigger: T) -> io::Result<Self> {
         let file = Some(rotator.rotate(None)?);
         Ok(Self {
             file,
@@ -61,7 +61,10 @@ where R: Rotator,
 }
 
 impl<R, T> Write for FileRotate<R, T>
-where R: Rotator, T: Trigger, {
+where
+    R: Rotator,
+    T: Trigger,
+{
     fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
         let mut begin = 0;
         loop {
@@ -103,7 +106,7 @@ where R: Rotator, T: Trigger, {
 #[test]
 fn basic() {
     use std::fs;
-    let rotator = rotators::NumberedSuffix::new().max(3);
+    let rotator = rotators::NumberedSuffix::new("foo").max(3);
     let trigger = triggers::Bytes::new().limit(10);
     let mut fr = FileRotate::new(rotator, trigger).unwrap();
 
@@ -112,12 +115,13 @@ fn basic() {
     assert_eq!("abcdefghij", fs::read_to_string("foo.0").unwrap());
     assert_eq!("klmnopqrst", fs::read_to_string("foo.1").unwrap());
     assert_eq!("uvwxyz0123", fs::read_to_string("foo.2").unwrap());
-    assert_eq!("456789", fs::read_to_string("foo.3").unwrap());
+    assert_eq!("456789", fs::read_to_string("foo").unwrap());
 
     write!(fr, "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*[]_+").unwrap();
 
     assert_eq!("EFGHIJKLMN", fs::read_to_string("foo.0").unwrap());
     assert_eq!("OPQRSTUVWX", fs::read_to_string("foo.1").unwrap());
     assert_eq!("YZ!@#$%^&*", fs::read_to_string("foo.2").unwrap());
-    assert_eq!("[]_+", fs::read_to_string("foo.3").unwrap());
+    assert_eq!("456789ABCD", fs::read_to_string("foo.3").unwrap());
+    assert_eq!("[]_+", fs::read_to_string("foo").unwrap());
 }

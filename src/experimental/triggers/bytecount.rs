@@ -23,10 +23,6 @@ impl Bytes {
 impl Trigger for Bytes {
     fn trigger(&mut self, bytes: &[u8]) -> Action {
         if self.count + bytes.len() > self.limit {
-            println!(
-                "consumed: self.limit={} self.count={}",
-                self.limit, self.count
-            );
             let consumed = self.limit - self.count;
             self.count = 0;
             Action::Rotate { consumed }
