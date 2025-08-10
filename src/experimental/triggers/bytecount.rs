@@ -24,11 +24,15 @@ impl Trigger for Bytes {
     fn trigger(&mut self, bytes: &[u8]) -> Action {
         if self.count + bytes.len() > self.limit {
             let consumed = self.limit - self.count;
-            self.count = 0;
+            self.reset();
             Action::Rotate { consumed }
         } else {
             self.count += bytes.len();
             Action::None
         }
+    }
+
+    fn reset(&mut self) {
+        self.count = 0;
     }
 }
