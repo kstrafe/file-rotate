@@ -1,777 +1,511 @@
-//! Write output to a file and rotate the files when limits have been exceeded.
+//! File rotation for writers with modular triggers and rotators.
 //!
-//! Defines a simple [std::io::Write] object that you can plug into your writers as middleware.
+//! This crate provides a simple `std::io::Write` implementation that automatically
+//! rotates outputs based on pluggable conditions (triggers) and rotation schemes
+//! (rotators). It is designed to be modular, testable, and easy to extend.
 //!
-//! # Content limit #
+//! # Overview
 //!
-//! [ContentLimit] specifies at what point a log file has to be rotated.
+//! - Triggers decide when to rotate (e.g., by bytes, by lines, by delimiter, by time interval).
+//! - Rotators decide how to rotate (e.g., numbered suffix files, in-memory for tests).
 //!
-//! ## Rotating by Lines ##
+//! You compose them with `FileRotate<Rotator, Trigger>` which implements `Write`.
 //!
-//! We can rotate log files with the amount of lines as a limit, by using [ContentLimit::Lines].
+//! # Design principles
 //!
-//! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
-//! use std::{fs, io::Write};
+//! - Separation of concerns: triggers decide when to rotate; rotators decide how.
+//! - Deterministic testing: time sources are abstracted behind a `Clock` trait and
+//!   file-based tests use temporary directories.
+//! - Backpressure-free writes: rotation happens inline during `write`, splitting the
+//!   input buffer into consumed and remaining parts.
+//! - Minimal allocations: triggers inspect slices; rotators are responsible for IO.
 //!
-//! // Create a new log writer. The first argument is anything resembling a path. The
-//! // basename is used for naming the log files.
-//! //
-//! // Here we choose to limit logs by 10 lines, and have at most 2 rotated log files. This
-//! // makes the total amount of log files 3, since the original file is present as well.
+//! # Examples
 //!
-//! # let directory = tempfile::TempDir::new().unwrap();
-//! # let directory = directory.path();
-//! let log_path = directory.join("my-log-file");
+//! ## Rotate by bytes with numbered suffix files
 //!
-//! let mut log = FileRotate::new(
-//!     log_path.clone(),
-//!     AppendCount::new(2),
-//!     ContentLimit::Lines(3),
-//!     Compression::None,
-//!     None,
-//! );
-//!
-//! // Write a bunch of lines
-//! writeln!(log, "Line 1: Hello World!");
-//! for idx in 2..11 {
-//!     writeln!(log, "Line {}", idx);
-//! }
-//!
-//! assert_eq!("Line 10\n", fs::read_to_string(&log_path).unwrap());
-//!
-//! assert_eq!("Line 4\nLine 5\nLine 6\n", fs::read_to_string(&directory.join("my-log-file.2")).unwrap());
-//! assert_eq!("Line 7\nLine 8\nLine 9\n", fs::read_to_string(&directory.join("my-log-file.1")).unwrap());
-//! ```
-//!
-//! ## Rotating by Bytes ##
-//!
-//! Another method of rotation is by bytes instead of lines, with [ContentLimit::Bytes].
+//! Rotates every 10 bytes, keeping up to 3 rotated files alongside the base file.
 //!
 //! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
-//! use std::{fs, io::Write};
-//!
-//! # let directory = tempfile::TempDir::new().unwrap();
-//! # let directory = directory.path();
-//! let log_path = directory.join("my-log-file");
-//!
-//! let mut log = FileRotate::new(
-//!     "target/my-log-directory-bytes/my-log-file",
-//!     AppendCount::new(2),
-//!     ContentLimit::Bytes(5),
-//!     Compression::None,
-//!     None,
-//! );
-//!
-//! writeln!(log, "Test file");
-//!
-//! assert_eq!("Test ", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("file\n", fs::read_to_string("target/my-log-directory-bytes/my-log-file").unwrap());
-//!
-//! fs::remove_dir_all("target/my-log-directory-bytes");
-//! ```
-//!
-//! # Rotation Method #
-//!
-//! Two rotation methods are provided, but any behaviour can be implemented with the [SuffixScheme]
-//! trait.
-//!
-//! ## Basic count ##
-//!
-//! With [AppendCount], when the limit is reached in the main log file, the file is moved with
-//! suffix `.1`, and subsequently numbered files are moved in a cascade.
-//!
-//! Here's an example with 1 byte limits:
-//!
-//! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::AppendCount, compression::Compression};
-//! use std::{fs, io::Write};
-//!
-//! # let directory = tempfile::TempDir::new().unwrap();
-//! # let directory = directory.path();
-//! let log_path = directory.join("my-log-file");
-//!
-//! let mut log = FileRotate::new(
-//!     log_path.clone(),
-//!     AppendCount::new(3),
-//!     ContentLimit::Bytes(1),
-//!     Compression::None,
-//!     None,
-//! );
-//!
-//! write!(log, "A");
-//! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "B");
-//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
-//! assert_eq!("B", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "C");
-//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
-//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
-//! assert_eq!("C", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "D");
-//! assert_eq!("A", fs::read_to_string(directory.join("my-log-file.3")).unwrap());
-//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
-//! assert_eq!("C", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
-//! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "E");
-//! assert_eq!("B", fs::read_to_string(directory.join("my-log-file.3")).unwrap());
-//! assert_eq!("C", fs::read_to_string(directory.join("my-log-file.2")).unwrap());
-//! assert_eq!("D", fs::read_to_string(directory.join("my-log-file.1")).unwrap());
-//! assert_eq!("E", fs::read_to_string(&log_path).unwrap());
-//! ```
-//!
-//! ## Timestamp suffix ##
-//!
-//! With [AppendTimestamp], when the limit is reached in the main log file, the file is moved with
-//! suffix equal to the current timestamp (with the specified or a default format). If the
-//! destination file name already exists, `.1` (and up) is appended.
-//!
-//! Note that this works somewhat different to `AppendCount` because of lexical ordering concerns:
-//! Higher numbers mean more recent logs, whereas `AppendCount` works in the opposite way.
-//! The reason for this is to keep the lexical ordering of log names consistent: Higher lexical value
-//! means more recent.
-//! This is of course all assuming that the format start with the year (or most significant
-//! component).
-//!
-//! With this suffix scheme, you can also decide whether to delete old files based on the age of
-//! their timestamp ([FileLimit::Age]), or just maximum number of files ([FileLimit::MaxFiles]).
-//!
-//! ```
-//! use file_rotate::{FileRotate, ContentLimit, suffix::{AppendTimestamp, FileLimit},
-//! compression::Compression};
-//! use std::{fs, io::Write};
-//!
-//! # let directory = tempfile::TempDir::new().unwrap();
-//! # let directory = directory.path();
-//! let log_path = directory.join("my-log-file");
-//!
-//! let mut log = FileRotate::new(
-//!     log_path.clone(),
-//!     AppendTimestamp::default(FileLimit::MaxFiles(2)),
-//!     ContentLimit::Bytes(1),
-//!     Compression::None,
-//!     None,
-//! );
-//!
-//! write!(log, "A");
-//! assert_eq!("A", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "B");
-//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("B", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "C");
-//! assert_eq!("A", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("B", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("C", fs::read_to_string(&log_path).unwrap());
-//!
-//! write!(log, "D");
-//! assert_eq!("B", fs::read_to_string(&log.log_paths()[0]).unwrap());
-//! assert_eq!("C", fs::read_to_string(&log.log_paths()[1]).unwrap());
-//! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
-//! ```
-//!
-//! If you use timestamps as suffix, you can also configure files to be removed as they reach a
-//! certain age. For example:
-//! ```rust
-//! use file_rotate::suffix::{AppendTimestamp, FileLimit};
-//! AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1)));
-//! ```
-//!
-//! # Compression #
-//!
-//! Select a [Compression] mode to make the file rotater compress old files using flate2.
-//! Compressed files get an additional suffix `.gz` after the main suffix.
-//!
-//! ## Compression example ##
-//! If we run this:
-//!
-//! ```ignore
-//! use file_rotate::{compression::*, suffix::*, *};
 //! use std::io::Write;
+//! use file_rotate::{FileRotate, rotators::NumberedSuffix, triggers::Bytes};
 //!
-//! let mut log = FileRotate::new(
-//!     "./log",
-//!     AppendTimestamp::default(FileLimit::MaxFiles(4)),
-//!     ContentLimit::Bytes(1),
-//!     Compression::OnRotate(2),
-//!     None,
-//! );
+//! let dir = tempfile::tempdir().unwrap();
+//! let base = dir.path().join("app.log");
 //!
-//! for i in 0..6 {
-//!     write!(log, "{}", i).unwrap();
-//!     std::thread::sleep(std::time::Duration::from_secs(1));
-//! }
-//! ```
-//! The following files will be created:
-//! ```ignore
-//! log  log.20220112T112415.gz  log.20220112T112416.gz  log.20220112T112417  log.20220112T112418
-//! ```
-//! And we can assemble all the available log data with:
-//! ```ignore
-//! $ gunzip -c log.20220112T112415.gz  ; gunzip -c log.20220112T112416.gz ; cat log.20220112T112417 log.20220112T112418 log
-//! 12345
+//! let rotator = NumberedSuffix::new(base.clone()).max(3);
+//! let trigger = Bytes::new().limit(10);
+//! let mut log = FileRotate::new(rotator, trigger).unwrap();
+//!
+//! write!(log, "abcdefghijklmnopqrstuvwxyz0123456789").unwrap();
+//!
+//! assert_eq!("abcdefghij", std::fs::read_to_string(base.with_extension("0")).unwrap());
+//! assert_eq!("klmnopqrst", std::fs::read_to_string(base.with_extension("1")).unwrap());
+//! assert_eq!("uvwxyz0123", std::fs::read_to_string(base.with_extension("2")).unwrap());
+//! assert_eq!("456789",     std::fs::read_to_string(&base).unwrap());
 //! ```
 //!
+//! ## Rotate on a delimiter
 //!
-//! ## Get structured list of log files ##
-//!
-//! We can programmatically get the list of log files.
-//! The following code scans the current directory and recognizes log files based on their file name:
+//! Rotates whenever a given byte sequence is seen. Matches can span multiple writes.
 //!
 //! ```
-//! # use file_rotate::{suffix::*, *};
-//! # use std::path::Path;
-//! println!(
-//!     "{:#?}",
-//!     AppendTimestamp::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
-//! );
+//! use std::io::Write;
+//! use file_rotate::{FileRotate, rotators::NumberedSuffix, triggers::Delimiter};
+//!
+//! let dir = tempfile::tempdir().unwrap();
+//! let base = dir.path().join("events");
+//! let rotator = NumberedSuffix::new(base.clone()).max(2);
+//! let mut log = FileRotate::new(rotator, Delimiter::new("END\n", true)).unwrap();
+//!
+//! write!(log, "part1 END\npart2 END\n").unwrap();
+//! // Two rotations occurred: newest data is in .1 and base is empty
+//! assert_eq!("part1 END\n", std::fs::read_to_string(base.with_extension("0")).unwrap());
+//! assert_eq!("part2 END\n", std::fs::read_to_string(base.with_extension("1")).unwrap());
+//! assert_eq!("", std::fs::read_to_string(&base).unwrap());
 //! ```
 //!
-//! [SuffixScheme::scan_suffixes] also takes into account the possibility of the extra `.gz` suffix, and
-//! interprets it correctly as compression. The output:
+//! ## Rotate at fixed intervals (mockable clock)
 //!
-//! ```ignore
-//! {
-//!     SuffixInfo {
-//!         suffix: TimestampSuffix {
-//!             timestamp: "20220112T112418",
-//!             number: None,
-//!         },
-//!         compressed: false,
-//!     },
-//!     SuffixInfo {
-//!         suffix: TimestampSuffix {
-//!             timestamp: "20220112T112417",
-//!             number: None,
-//!         },
-//!         compressed: false,
-//!     },
-//!     SuffixInfo {
-//!         suffix: TimestampSuffix {
-//!             timestamp: "20220112T112416",
-//!             number: None,
-//!         },
-//!         compressed: true,
-//!     },
-//!     SuffixInfo {
-//!         suffix: TimestampSuffix {
-//!             timestamp: "20220112T112415",
-//!             number: None,
-//!         },
-//!         compressed: true,
-//!     },
-//! }
+//! Uses a clock trait so time can be mocked in tests.
+//!
 //! ```
-//! This information can be used by for example a program to assemble log history.
+//! use std::cell::Cell;
+//! use std::io::Write;
+//! use std::time::Duration;
+//! use file_rotate::{FileRotate, rotators::MemoryRotator, triggers::{Interval, Clock}};
 //!
-//! # Filesystem Errors #
+//! #[derive(Clone)]
+//! struct StepClock(Cell<Duration>);
+//! impl Clock for StepClock { fn now(&self) -> Duration { self.0.get() } }
 //!
-//! If the directory containing the logs is deleted or somehow made inaccessible then the rotator
-//! will simply continue operating without fault. When a rotation occurs, it attempts to open a
-//! file in the directory. If it can, it will just continue logging. If it can't then the written
-//! data is sent to the void.
+//! let clock = StepClock(Cell::new(Duration::from_secs(0)));
+//! let trigger = Interval::new(clock.clone(), Duration::from_secs(1));
+//! let rotator = MemoryRotator::new();
+//! let mut log = FileRotate::new(rotator, trigger).unwrap();
+//!
+//! // First write sets the initial time reference.
+//! write!(log, "hello").unwrap();
+//! // Advance time to exceed the interval, causing rotation on the next write.
+//! clock.0.set(Duration::from_secs(2));
+//! write!(log, "world").unwrap();
+//! ```
+//!
+//! # More examples
+//!
+//! You can run additional examples from the examples/ directory:
+//!
+//! - `cargo run --example rotate_bytes`
+//! - `cargo run --example rotate_delimiter`
+//! - `cargo run --example rotate_interval`
+//!
+//! # Testing and determinism
+//!
+//! - Use `tempfile::tempdir()` to isolate file-based tests and prevent cross-test
+//!   interference.
+//! - For time-based triggers, implement `Clock` and inject a mock clock into `Interval`.
+//! - When asserting file contents, flush the writer first (e.g., `writer.flush()?`).
+//!
+//! # Error handling
+//!
+//! - `FileRotate::new` returns IO errors from the underlying rotator during the initial
+//!   writer creation.
+//! - Errors during rotation propagate from the rotator's `rotate` method.
+//! - Attempting to write or flush without an active writer returns an error.
+use std::io::{self, Write};
 
-#![deny(
-    // missing_docs,
-    trivial_casts,
-    trivial_numeric_casts,
-    unsafe_code,
-    unused_import_braces,
-    unused_qualifications
-)]
+/// Handles *when* to rotate.
+pub trait Trigger {
+    /// Additional metadata that can be exposed by a trigger for use by a modifier.
+    type Meta;
 
-use chrono::prelude::*;
-use compression::*;
-use std::io::{BufRead, BufReader};
-use std::{
-    cmp::Ordering,
-    collections::BTreeSet,
-    fs::{self, File, OpenOptions},
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
-use suffix::*;
-
-pub mod compression;
-pub mod experimental;
-pub mod suffix;
-#[cfg(test)]
-mod tests;
-
-// ---
-
-/// At which frequency to rotate the file.
-#[derive(Clone, Copy, Debug)]
-pub enum TimeFrequency {
-    /// Rotate every hour.
-    Hourly,
-    /// Rotate one time a day.
-    Daily,
-    /// Rotate ones a week.
-    Weekly,
-    /// Rotate every month.
-    Monthly,
-    /// Rotate yearly.
-    Yearly,
+    /// Called for every write. Counts properties of the output stream and decides whether to perform a rotation or not.
+    fn trigger(&mut self, bytes: &[u8]) -> Action;
+    /// Reset the current state. Called when `trigger` returns Action::Rotate.
+    fn reset(&mut self);
+    /// Observe the provided bytes and return metadata for the modifier.
+    fn observe(&mut self, _bytes: &[u8]) -> Self::Meta;
 }
 
-/// When to move files: Condition on which a file is rotated.
-#[derive(Clone, Debug)]
-pub enum ContentLimit {
-    /// Cut the log at the exact size in bytes.
-    Bytes(usize),
-    /// Cut the log file at line breaks.
-    Lines(usize),
-    /// Cut the log at time interval.
-    Time(TimeFrequency),
-    /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
-    BytesSurpassed(usize),
-    /// Don't do any rotation automatically
+/// Rotator provides Write instances and handles switching between them
+pub trait Rotator {
+    type Writer: Write;
+
+    /// Create the initial writer
+    fn initial(&mut self) -> io::Result<Self::Writer>;
+
+    /// Rotate to a new writer, taking the previous one for cleanup
+    fn rotate(&mut self, current: Self::Writer) -> io::Result<Self::Writer>;
+}
+
+/// Decides whether to trigger a log rotation.
+pub enum Action {
+    /// Rotate the log file, reporting how many bytes the current log has consumed from the
+    /// buffer to write to the log file. The remaining bytes will be written to the new log.
+    Rotate {
+        /// Amount of bytes that were written from the buffer to the file before rotation.
+        consumed: usize,
+    },
+    /// Do not perform a log rotation.
     None,
 }
 
-/// Used mostly internally. Info about suffix + compressed state.
-#[derive(Clone, Debug, Eq)]
-pub struct SuffixInfo<Repr> {
-    /// Suffix
-    pub suffix: Repr,
-    /// Whether there is a `.gz` suffix after the suffix
-    pub compressed: bool,
-}
-impl<R: PartialEq> PartialEq for SuffixInfo<R> {
-    fn eq(&self, other: &Self) -> bool {
-        self.suffix == other.suffix
-    }
-}
-
-impl<Repr: Representation> SuffixInfo<Repr> {
-    /// Append this suffix (and eventual `.gz`) to a path
-    pub fn to_path(&self, basepath: &Path) -> PathBuf {
-        let path = self.suffix.to_path(basepath);
-        if self.compressed {
-            PathBuf::from(format!("{}.gz", path.display()))
-        } else {
-            path
-        }
-    }
-}
-
-impl<Repr: Representation> Ord for SuffixInfo<Repr> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.suffix.cmp(&other.suffix)
-    }
-}
-impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 /// The main writer used for rotating logs.
-#[derive(Debug)]
-pub struct FileRotate<S: SuffixScheme> {
-    basepath: PathBuf,
-    file: Option<File>,
-    modified: Option<DateTime<Local>>,
-    content_limit: ContentLimit,
-    count: usize,
-    compression: Compression,
-    suffix_scheme: S,
-    /// The bool is whether or not there's a .gz suffix to the filename
-    suffixes: BTreeSet<SuffixInfo<S::Repr>>,
-    open_options: Option<OpenOptions>,
+pub struct FileRotate<R, T>
+where
+    R: Rotator,
+    T: Trigger,
+{
+    writer: Option<R::Writer>,
+    rotator: R,
+    trigger: T,
+    // Optional modifier: when present, each written line is prefixed (or otherwise
+    // modified) using bytes produced by this closure based on trigger metadata.
+    modifier: Option<Box<dyn FnMut(&T::Meta) -> Vec<u8>>>,
+    // Tracks whether the next byte to be written is at the start of a line.
+    at_line_start: bool,
 }
 
-impl<S: SuffixScheme> FileRotate<S> {
-    /// Create a new [FileRotate].
-    ///
-    /// The basename of the `path` is used to create new log files by appending an extension of the
-    /// form `.N`, where N is `0..=max_files`.
-    ///
-    /// `content_limit` specifies the limits for rotating a file.
-    ///
-    /// `open_options`: If provided, you must set `.read(true).create(true).append(true)`!
-    ///
-    /// # Panics
-    ///
-    /// Panics if `bytes == 0` or `lines == 0`.
-    pub fn new<P: AsRef<Path>>(
-        path: P,
-        suffix_scheme: S,
-        content_limit: ContentLimit,
-        compression: Compression,
-        open_options: Option<OpenOptions>,
-    ) -> Self {
-        match content_limit {
-            ContentLimit::Bytes(bytes) => {
-                assert!(bytes > 0);
-            }
-            ContentLimit::Lines(lines) => {
-                assert!(lines > 0);
-            }
-            ContentLimit::Time(_) => {}
-            ContentLimit::BytesSurpassed(bytes) => {
-                assert!(bytes > 0);
-            }
-            ContentLimit::None => {}
-        };
-
-        let basepath = path.as_ref().to_path_buf();
-        fs::create_dir_all(basepath.parent().unwrap()).expect("create dir");
-
-        let mut s = Self {
-            file: None,
-            modified: None,
-            basepath,
-            content_limit,
-            count: 0,
-            compression,
-            suffixes: BTreeSet::new(),
-            suffix_scheme,
-            open_options,
-        };
-        s.ensure_log_directory_exists();
-        s.scan_suffixes();
-
-        s
+impl<R, T> FileRotate<R, T>
+where
+    R: Rotator,
+    T: Trigger,
+{
+    pub fn new(mut rotator: R, trigger: T) -> io::Result<Self> {
+        let writer = Some(rotator.initial()?);
+        Ok(Self {
+            writer,
+            rotator,
+            trigger,
+            modifier: None,
+            at_line_start: true,
+        })
     }
-    fn ensure_log_directory_exists(&mut self) {
-        let path = self.basepath.parent().unwrap();
-        if !path.exists() {
-            let _ = fs::create_dir_all(path).expect("create dir");
-            self.scan_suffixes();
-        }
-        if !self.basepath.exists() || self.file.is_none() {
-            // Open or create the file
-            self.open_file();
 
-            match self.file {
-                None => self.count = 0,
-                Some(ref mut file) => {
-                    match self.content_limit {
-                        ContentLimit::Bytes(_) | ContentLimit::BytesSurpassed(_) => {
-                            // Update byte `count`
-                            if let Ok(metadata) = file.metadata() {
-                                self.count = metadata.len() as usize;
-                            } else {
-                                self.count = 0;
-                            }
+    /// Construct with a line modifier that runs at the start of each line.
+    /// The closure is invoked at the moment of writing with the trigger's
+    /// current metadata, so it can produce a prefix or other transformation.
+    pub fn with_modifier(
+        mut rotator: R,
+        trigger: T,
+        modifier: Box<dyn FnMut(&T::Meta) -> Vec<u8>>,
+    ) -> io::Result<Self> {
+        let writer = Some(rotator.initial()?);
+        Ok(Self {
+            writer,
+            rotator,
+            trigger,
+            modifier: Some(modifier),
+            at_line_start: true,
+        })
+    }
+
+    fn write_with_modifier_to(
+        writer: &mut R::Writer,
+        data: &[u8],
+        modifier: &mut Option<Box<dyn FnMut(&T::Meta) -> Vec<u8>>>,
+        at_line_start: &mut bool,
+        meta: &T::Meta,
+    ) -> io::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        match modifier.as_mut() {
+            None => writer.write_all(data),
+            Some(modifier) => {
+                let mut i = 0;
+                // If we are at the start of a line, write the prefix first.
+                if *at_line_start {
+                    let p = (modifier)(meta);
+                    writer.write_all(&p)?;
+                    *at_line_start = false;
+                }
+                while i < data.len() {
+                    if let Some(rel) = data[i..].iter().position(|&b| b == b'\n') {
+                        let end = i + rel + 1; // include the newline
+                        writer.write_all(&data[i..end])?;
+                        i = end;
+                        if i < data.len() {
+                            // New line starts immediately; emit prefix for next line.
+                            let p = (modifier)(meta);
+                            writer.write_all(&p)?;
+                            *at_line_start = false;
+                        } else {
+                            // Buffer ended exactly at a newline; next write is at line start.
+                            *at_line_start = true;
                         }
-                        ContentLimit::Lines(_) => {
-                            self.count = BufReader::new(file).lines().count();
-                        }
-                        ContentLimit::Time(_) => {
-                            self.modified = mtime(file);
-                        }
-                        ContentLimit::None => {}
+                    } else {
+                        writer.write_all(&data[i..])?;
+                        break;
                     }
                 }
+                Ok(())
             }
         }
-    }
-
-    fn open_file(&mut self) {
-        let open_options = self.open_options.clone().unwrap_or_else(|| {
-            let mut o = OpenOptions::new();
-            o.read(true).create(true).append(true);
-            o
-        });
-
-        self.file = open_options.open(&self.basepath).ok();
-    }
-
-    fn scan_suffixes(&mut self) {
-        self.suffixes = self.suffix_scheme.scan_suffixes(&self.basepath);
-    }
-    /// Get paths of rotated log files (excluding the original/current log file), ordered from
-    /// oldest to most recent
-    pub fn log_paths(&mut self) -> Vec<PathBuf> {
-        self.suffixes
-            .iter()
-            .rev()
-            .map(|suffix| suffix.to_path(&self.basepath))
-            .collect::<Vec<_>>()
-    }
-
-    /// Recursive function that keeps moving files if there's any file name collision.
-    /// If `suffix` is `None`, it moves from basepath to next suffix given by the SuffixScheme
-    /// Assumption: Any collision in file name is due to an old log file.
-    ///
-    /// Returns the suffix of the new file (the last suffix after possible cascade of renames).
-    fn move_file_with_suffix(
-        &mut self,
-        old_suffix_info: Option<SuffixInfo<S::Repr>>,
-    ) -> io::Result<SuffixInfo<S::Repr>> {
-        // NOTE: this newest_suffix is there only because AppendTimestamp specifically needs
-        // it. Otherwise it might not be necessary to provide this to `rotate_file`. We could also
-        // have passed the internal BTreeMap itself, but it would require to make SuffixInfo `pub`.
-
-        let newest_suffix = self.suffixes.iter().next().map(|info| &info.suffix);
-
-        let new_suffix = self.suffix_scheme.rotate_file(
-            &self.basepath,
-            newest_suffix,
-            &old_suffix_info.clone().map(|i| i.suffix),
-        )?;
-
-        // The destination file/path eventual .gz suffix must match the source path
-        let new_suffix_info = SuffixInfo {
-            suffix: new_suffix,
-            compressed: old_suffix_info
-                .as_ref()
-                .map(|x| x.compressed)
-                .unwrap_or(false),
-        };
-        let new_path = new_suffix_info.to_path(&self.basepath);
-
-        // Whatever exists that would block a move to the new suffix
-        let existing_suffix_info = self.suffixes.get(&new_suffix_info).cloned();
-
-        // Move destination file out of the way if it exists
-        let newly_created_suffix = if let Some(existing_suffix_info) = existing_suffix_info {
-            // We might move files in a way that the destination path doesn't equal the path that
-            // was replaced. Due to possible `.gz`, a "conflicting" file doesn't mean that paths
-            // are equal.
-            self.suffixes.replace(new_suffix_info);
-            // Recurse to move conflicting file.
-            self.move_file_with_suffix(Some(existing_suffix_info))?
-        } else {
-            new_suffix_info
-        };
-
-        let old_path = match old_suffix_info {
-            Some(suffix) => suffix.to_path(&self.basepath),
-            None => self.basepath.clone(),
-        };
-
-        // Do the move
-        assert!(old_path.exists());
-        assert!(!new_path.exists());
-        fs::rename(old_path, new_path)?;
-
-        Ok(newly_created_suffix)
-    }
-
-    /// Trigger a log rotation manually. This is mostly intended for use with `ContentLimit::None`
-    /// but will work with all content limits.
-    pub fn rotate(&mut self) -> io::Result<()> {
-        self.ensure_log_directory_exists();
-
-        let _ = self.file.take();
-
-        // This function will always create a new file. Returns suffix of that file
-        let new_suffix_info = self.move_file_with_suffix(None)?;
-        self.suffixes.insert(new_suffix_info);
-
-        self.open_file();
-
-        self.count = 0;
-
-        self.handle_old_files()?;
-
-        Ok(())
-    }
-    fn handle_old_files(&mut self) -> io::Result<()> {
-        // Find the youngest suffix that is too old, and then remove all suffixes that are older or
-        // equally old:
-        let mut youngest_old = None;
-        // Start from oldest suffix, stop when we find a suffix that is not too old
-        let mut result = Ok(());
-        for (i, suffix) in self.suffixes.iter().enumerate().rev() {
-            if self.suffix_scheme.too_old(&suffix.suffix, i) {
-                result = result.and(fs::remove_file(suffix.to_path(&self.basepath)));
-                youngest_old = Some((*suffix).clone());
-            } else {
-                break;
-            }
-        }
-        if let Some(youngest_old) = youngest_old {
-            // Removes all the too old
-            let _ = self.suffixes.split_off(&youngest_old);
-        }
-
-        // Compression
-        if let Compression::OnRotate(max_file_n) = self.compression {
-            let n = (self.suffixes.len() as i32 - max_file_n as i32).max(0) as usize;
-            // The oldest N files should be compressed
-            let suffixes_to_compress = self
-                .suffixes
-                .iter()
-                .rev()
-                .take(n)
-                .filter(|info| !info.compressed)
-                .cloned()
-                .collect::<Vec<_>>();
-            for info in suffixes_to_compress {
-                // Do the compression
-                let path = info.suffix.to_path(&self.basepath);
-                compress(&path)?;
-
-                self.suffixes.replace(SuffixInfo {
-                    compressed: true,
-                    ..info
-                });
-            }
-        }
-
-        result
     }
 }
 
-impl<S: SuffixScheme> Write for FileRotate<S> {
-    fn write(&mut self, mut buf: &[u8]) -> io::Result<usize> {
-        let written = buf.len();
-        match self.content_limit {
-            ContentLimit::Bytes(bytes) => {
-                while self.count + buf.len() > bytes {
-                    let bytes_left = bytes.saturating_sub(self.count);
-                    if let Some(ref mut file) = self.file {
-                        file.write_all(&buf[..bytes_left])?;
-                    }
-                    self.rotate()?;
-                    buf = &buf[bytes_left..];
-                }
-                self.count += buf.len();
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
-                }
-            }
-            ContentLimit::Time(time) => {
-                let local: DateTime<Local> = now();
+impl<R, T> Write for FileRotate<R, T>
+where
+    R: Rotator,
+    T: Trigger,
+{
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let mut begin = 0;
 
-                if let Some(modified) = self.modified {
-                    match time {
-                        TimeFrequency::Hourly => {
-                            if local.hour() != modified.hour()
-                                || local.day() != modified.day()
-                                || local.month() != modified.month()
-                                || local.year() != modified.year()
-                            {
-                                self.rotate()?;
-                            }
-                        }
-                        TimeFrequency::Daily => {
-                            if local.date() > modified.date() {
-                                self.rotate()?;
-                            }
-                        }
-                        TimeFrequency::Weekly => {
-                            if local.iso_week().week() != modified.iso_week().week()
-                                || local.year() > modified.year()
-                            {
-                                self.rotate()?;
-                            }
-                        }
-                        TimeFrequency::Monthly => {
-                            if local.month() != modified.month() || local.year() != modified.year()
-                            {
-                                self.rotate()?;
-                            }
-                        }
-                        TimeFrequency::Yearly => {
-                            if local.year() > modified.year() {
-                                self.rotate()?;
-                            }
-                        }
-                    }
-                }
+        loop {
+            // Allow the trigger (and its children) to update metadata for this chunk.
+            let meta = self.trigger.observe(&buf[begin..]);
+            match self.trigger.trigger(&buf[begin..]) {
+                Action::Rotate { consumed } => {
+                    // Take writer, write consumed bytes (with optional prefix), then rotate.
+                    let mut writer = self
+                        .writer
+                        .take()
+                        .ok_or_else(|| io::Error::other("No writer available"))?;
 
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
+                    // Perform the write into current writer
+                    let write_res = Self::write_with_modifier_to(
+                        &mut writer,
+                        &buf[begin..begin + consumed],
+                        &mut self.modifier,
+                        &mut self.at_line_start,
+                        &meta,
+                    );
 
-                    self.modified = Some(local);
-                }
-            }
-            ContentLimit::Lines(lines) => {
-                while let Some((idx, _)) = buf.iter().enumerate().find(|(_, byte)| *byte == &b'\n')
-                {
-                    if let Some(ref mut file) = self.file {
-                        file.write_all(&buf[..idx + 1])?;
+                    // Rotate regardless; if write failed, propagate after rotation to keep state consistent
+                    let rotated = self.rotator.rotate(writer);
+                    match (write_res, rotated) {
+                        (Ok(()), Ok(new_writer)) => {
+                            self.writer = Some(new_writer);
+                        }
+                        (Err(e), Ok(new_writer)) => {
+                            self.writer = Some(new_writer);
+                            return Err(e);
+                        }
+                        (Ok(()), Err(e)) => {
+                            // reinstate no writer; return error
+                            self.writer = None;
+                            return Err(e);
+                        }
+                        (Err(e1), Err(_e2)) => {
+                            self.writer = None;
+                            return Err(e1);
+                        }
                     }
-                    self.count += 1;
-                    buf = &buf[idx + 1..];
-                    if self.count >= lines {
-                        self.rotate()?;
-                    }
+
+                    begin += consumed;
+                    self.trigger.reset();
                 }
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
-                }
-            }
-            ContentLimit::BytesSurpassed(bytes) => {
-                if self.count > bytes {
-                    self.rotate()?
-                }
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
-                }
-                self.count += buf.len();
-            }
-            ContentLimit::None => {
-                if let Some(ref mut file) = self.file {
-                    file.write_all(buf)?;
+                Action::None => {
+                    // Take writer to avoid borrowing conflicts, write remaining, then put back
+                    let mut writer = self
+                        .writer
+                        .take()
+                        .ok_or_else(|| io::Error::other("No writer available"))?;
+                    let res = Self::write_with_modifier_to(
+                        &mut writer,
+                        &buf[begin..],
+                        &mut self.modifier,
+                        &mut self.at_line_start,
+                        &meta,
+                    );
+                    self.writer = Some(writer);
+                    res?;
+                    return Ok(buf.len());
                 }
             }
         }
-        Ok(written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.file
-            .as_mut()
-            .map(|file| file.flush())
-            .unwrap_or(Ok(()))
+        if let Some(writer) = &mut self.writer {
+            writer.flush()
+        } else {
+            Err(io::Error::other("No writer to flush"))
+        }
     }
 }
 
-/// Get modification time, in non test case.
-#[cfg(not(test))]
-fn mtime(file: &File) -> Option<DateTime<Local>> {
-    if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
-        return Some(time.into());
-    }
+// Modules split out for triggers and rotators
+pub mod rotators;
+pub mod triggers;
 
-    None
-}
+// Re-export commonly used items at crate root for convenience/back-compat
+pub use rotators::{DatedSuffix, MemoryRotator, MemoryWriter, NumberedSuffix};
+pub use triggers::{
+    Bytes, Clock, Delimiter, Interval, LineCount, RealClock, TriggerCombinator, TriggerExt,
+};
 
-/// Get modification time, in test case.
 #[cfg(test)]
-fn mtime(_: &File) -> Option<DateTime<Local>> {
-    Some(now())
-}
-
-/// Get system time, in non test case.
-#[cfg(not(test))]
-fn now() -> DateTime<Local> {
-    Local::now()
-}
-
-/// Get mocked system time, in test case.
-#[cfg(test)]
-pub mod mock_time {
+mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::fs;
+    use tempfile::tempdir;
 
-    thread_local! {
-        static MOCK_TIME: RefCell<Option<DateTime<Local>>> = RefCell::new(None);
+    #[test]
+    fn basic_file_rotation() {
+        // Isolate files into a unique temp directory per test run
+        let dir = tempdir().unwrap();
+        let base = dir.path().join("foo");
+        let rotator = rotators::NumberedSuffix::new(base.clone()).max(3);
+        let trigger = triggers::Bytes::new().limit(10);
+        let mut fr = FileRotate::new(rotator, trigger).unwrap();
+
+        write!(fr, "abcdefghijklmnopqrstuvwxyz0123456789").unwrap();
+        // Flush to ensure all IO is visible before reading
+        fr.flush().unwrap();
+
+        assert_eq!(
+            "abcdefghij",
+            fs::read_to_string(base.with_extension("0")).unwrap()
+        );
+        assert_eq!(
+            "klmnopqrst",
+            fs::read_to_string(base.with_extension("1")).unwrap()
+        );
+        assert_eq!(
+            "uvwxyz0123",
+            fs::read_to_string(base.with_extension("2")).unwrap()
+        );
+        assert_eq!("456789", fs::read_to_string(&base).unwrap());
+
+        write!(fr, "!@#$%^&*[]_+").unwrap();
+
+        assert_eq!(
+            "klmnopqrst",
+            fs::read_to_string(base.with_extension("0")).unwrap()
+        );
+        assert_eq!(
+            "uvwxyz0123",
+            fs::read_to_string(base.with_extension("1")).unwrap()
+        );
+        assert_eq!(
+            "456789!@#$",
+            fs::read_to_string(base.with_extension("2")).unwrap()
+        );
+        assert_eq!("%^&*[]_+", fs::read_to_string(&base).unwrap());
     }
 
-    /// Get current _mocked_ time
-    pub fn now() -> DateTime<Local> {
-        MOCK_TIME.with(|cell| cell.borrow().as_ref().cloned().unwrap_or_else(Local::now))
+    #[test]
+    fn test_memory_rotator() {
+        let rotator = rotators::MemoryRotator::new();
+        let trigger = triggers::Bytes::new().limit(5);
+        let mut fr = FileRotate::new(rotator, trigger).unwrap();
+
+        write!(fr, "hello world test").unwrap();
+
+        // Access the buffers
+        assert_eq!(b"hello", fr.rotator.get_buffer(0).unwrap());
+        assert_eq!(b" worl", fr.rotator.get_buffer(1).unwrap());
+        assert_eq!(b"d tes", fr.rotator.get_buffer(2).unwrap());
     }
 
-    /// Set mocked time
-    pub fn set_mock_time(time: DateTime<Local>) {
-        MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
+    #[test]
+    fn test_line_count_trigger() {
+        let mut trigger = LineCount::new().limit(3);
+
+        // First two lines shouldn't trigger
+        assert!(matches!(trigger.trigger(b"line 1\n"), Action::None));
+        assert!(matches!(trigger.trigger(b"line 2\n"), Action::None));
+
+        // Third line should trigger rotation
+        match trigger.trigger(b"line 3\n") {
+            Action::Rotate { consumed } => assert_eq!(consumed, 7),
+            _ => panic!("Expected rotation"),
+        }
+
+        // After reset, should start counting again
+        trigger.reset();
+        assert!(matches!(trigger.trigger(b"new line 1\n"), Action::None));
+    }
+
+    #[test]
+    fn test_trigger_combinator() {
+        let size_trigger = triggers::Bytes::new().limit(10);
+        let line_trigger = LineCount::new().limit(2);
+        let mut combined = size_trigger.or(line_trigger);
+
+        // First line shouldn't trigger either
+        assert!(matches!(combined.trigger(b"short\n"), Action::None));
+
+        // Second line should trigger line count limit
+        match combined.trigger(b"line\n") {
+            Action::Rotate { consumed } => assert_eq!(consumed, 4),
+            _ => panic!("Expected rotation from line trigger"),
+        }
+
+        // After reset, test size trigger
+        combined.reset();
+        match combined.trigger(b"this is a very long line") {
+            Action::Rotate { consumed } => assert_eq!(consumed, 10),
+            _ => panic!("Expected rotation from size trigger"),
+        }
+    }
+
+    #[test]
+    fn test_combinator_with_memory() {
+        let rotator = rotators::MemoryRotator::new();
+        let byte_trigger = triggers::Bytes::new().limit(15);
+        let line_trigger = LineCount::new().limit(2);
+        let combined_trigger = byte_trigger.or(line_trigger);
+
+        let mut fr = FileRotate::new(rotator, combined_trigger).unwrap();
+
+        writeln!(fr, "First line").unwrap(); // 11 bytes, 1 line
+        writeln!(fr, "Second line").unwrap(); // 12 bytes, 2 lines -> triggers line count
+        write!(fr, "This is a longer third line").unwrap();
+        writeln!(fr, "Fourth").unwrap();
+        writeln!(fr, "Fifth").unwrap(); // Should trigger line count again
+        write!(fr, "Final").unwrap();
+
+        // Check the rotated buffers
+        let buffer = fr.rotator.get_buffer(0).unwrap();
+        let content = String::from_utf8_lossy(buffer);
+        assert!(content.contains("First line"));
+    }
+
+    #[test]
+    fn test_modifier_with_interval_meta() {
+        use crate::triggers::Bytes as BytesTrigger;
+        use crate::triggers::{Clock, Interval};
+        use std::cell::Cell;
+        use std::time::Duration;
+
+        #[derive(Clone)]
+        struct StepClock(std::rc::Rc<Cell<Duration>>);
+        impl Clock for StepClock {
+            fn now(&self) -> Duration {
+                self.0.get()
+            }
+        }
+
+        let cell = std::rc::Rc::new(Cell::new(Duration::from_secs(0)));
+        let clock = StepClock(cell.clone());
+        let interval = Interval::new(clock.clone(), Duration::from_secs(60));
+        let trigger = interval.or(BytesTrigger::new().limit(2));
+        let rotator = rotators::MemoryRotator::new();
+
+        let mut fr = FileRotate::with_modifier(
+            rotator,
+            trigger,
+            Box::new(|meta: &(std::time::Duration, ())| {
+                let (t, _) = meta;
+                format!("t={} ", t.as_secs()).into_bytes()
+            }),
+        )
+        .unwrap();
+
+        // First write at t=0
+        writeln!(fr, "A").unwrap();
+        // Advance time and write again; combinator.observe ensures interval's shared time updates
+        clock.0.set(Duration::from_secs(5));
+        writeln!(fr, "B").unwrap();
+
+        // Each write is 2 bytes including newline, so Bytes(2) fires each time.
+        let buf0 = fr.rotator.get_buffer(0).unwrap();
+        let buf1 = fr.rotator.get_buffer(1).unwrap();
+        assert_eq!(buf0, b"t=0 A\n");
+        assert_eq!(buf1, b"t=5 B\n");
     }
 }
-
-#[cfg(test)]
-pub use mock_time::now;
