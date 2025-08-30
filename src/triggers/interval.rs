@@ -82,27 +82,7 @@ impl<C: Clock> Trigger for Interval<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::Cell;
-
-    struct MockClock {
-        t: Cell<u64>,
-    }
-
-    impl MockClock {
-        fn new() -> Self {
-            Self { t: Cell::new(0) }
-        }
-
-        fn set(&self, secs: u64) {
-            self.t.set(secs);
-        }
-    }
-
-    impl Clock for MockClock {
-        fn now(&self) -> Duration {
-            Duration::from_secs(self.t.get())
-        }
-    }
+    use crate::test_support::time::MockClock;
 
     #[test]
     fn first_non_empty_initializes_then_rotates_after_period() {

@@ -114,6 +114,9 @@
 //! - Attempting to write or flush without an active writer returns an error.
 use std::io::{self, Write};
 
+#[cfg(test)]
+pub mod test_support;
+
 /// Handles *when* to rotate.
 pub trait Trigger {
     /// Additional metadata that can be exposed by a trigger for use by a modifier.
@@ -467,21 +470,14 @@ mod tests {
 
     #[test]
     fn test_modifier_with_interval_meta() {
+        use crate::test_support::time::StepClock;
         use crate::triggers::Bytes as BytesTrigger;
-        use crate::triggers::{Clock, Interval};
+        use crate::triggers::Interval;
         use std::cell::Cell;
         use std::time::Duration;
 
-        #[derive(Clone)]
-        struct StepClock(std::rc::Rc<Cell<Duration>>);
-        impl Clock for StepClock {
-            fn now(&self) -> Duration {
-                self.0.get()
-            }
-        }
-
         let cell = std::rc::Rc::new(Cell::new(Duration::from_secs(0)));
-        let clock = StepClock(cell.clone());
+        let clock = StepClock::new(cell.clone());
         let interval = Interval::new(clock.clone(), Duration::from_secs(60));
         let trigger = interval.or(BytesTrigger::new().limit(2));
         let rotator = rotators::MemoryRotator::new();
