@@ -120,6 +120,42 @@ impl Rotator for DatedSuffix {
         // Create a new base file
         File::create(&self.base_path)
     }
+
+    fn scan(&self) -> io::Result<Vec<std::path::PathBuf>> {
+        let parent = self
+            .base_path
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let base_stem = match self.base_path.file_stem() {
+            Some(n) => n.to_string_lossy().into_owned(),
+            None => String::new(),
+        };
+        let mut matches: Vec<(std::path::PathBuf, std::time::SystemTime)> = Vec::new();
+        for entry in fs::read_dir(parent)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if !base_stem.is_empty()
+                    && name.starts_with(&base_stem)
+                    && name.get(base_stem.len()..base_stem.len() + 1) == Some(".")
+                {
+                    let meta = entry.metadata()?;
+                    let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+                    matches.push((path, modified));
+                }
+            }
+        }
+        // Oldest first (ascending by modified time)
+        matches.sort_by(|a, b| a.1.cmp(&b.1));
+        let mut out: Vec<std::path::PathBuf> = matches.into_iter().map(|(p, _)| p).collect();
+        if self.base_path.exists() {
+            out.push(self.base_path.clone());
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
@@ -156,5 +192,29 @@ mod tests {
             .filter(|p| p != &base)
             .collect();
         assert!(rotated.len() <= 2);
+    }
+
+    #[test]
+    fn scan_returns_written_order_and_base_last() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("scan.log");
+        let mut rot = DatedSuffix::new(base.clone()).max(10);
+
+        let mut w = rot.initial().unwrap();
+        write!(w, "one").unwrap();
+        let mut w = rot.rotate(w).unwrap();
+        write!(w, "two").unwrap();
+        let mut w = rot.rotate(w).unwrap();
+        write!(w, "three").unwrap();
+        let _w = rot.rotate(w).unwrap();
+
+        let files = rot.scan().unwrap();
+        assert!(!files.is_empty());
+        // Expect base to be last
+        assert_eq!(files.last().unwrap(), &base);
+        // All returned paths should exist
+        for p in &files {
+            assert!(p.exists());
+        }
     }
 }

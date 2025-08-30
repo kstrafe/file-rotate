@@ -143,6 +143,11 @@ pub trait Rotator {
 
     /// Rotate to a new writer, taking the previous one for cleanup
     fn rotate(&mut self, current: Self::Writer) -> io::Result<Self::Writer>;
+
+    /// Scan the filesystem (or backing store) for files produced by this rotator
+    /// and return them in the order they were written, optionally including the
+    /// current base as the last element when applicable.
+    fn scan(&self) -> io::Result<Vec<std::path::PathBuf>>;
 }
 
 /// Decides whether to trigger a log rotation.

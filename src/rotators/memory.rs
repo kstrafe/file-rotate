@@ -50,6 +50,11 @@ impl Rotator for MemoryRotator {
         self.buffers.push(Vec::new());
         Ok(MemoryWriter::new(self.buffers.len() - 1))
     }
+
+    fn scan(&self) -> io::Result<Vec<std::path::PathBuf>> {
+        // In-memory rotator has no filesystem artifacts.
+        Ok(Vec::new())
+    }
 }
 
 /// Writer for `MemoryRotator` that accumulates bytes in a `Vec<u8>`.

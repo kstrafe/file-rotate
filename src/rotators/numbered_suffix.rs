@@ -88,6 +88,27 @@ impl Rotator for NumberedSuffix {
         // Create new current file
         File::create(&self.base_path)
     }
+
+    fn scan(&self) -> io::Result<Vec<std::path::PathBuf>> {
+        let mut out = Vec::new();
+        if self.max_files > 0 {
+            for i in 0..self.max_files {
+                let p = self.base_path.with_extension(format!("{}", i));
+                if p.exists() {
+                    out.push(p);
+                }
+            }
+        } else {
+            let p = self.base_path.with_extension("0");
+            if p.exists() {
+                out.push(p);
+            }
+        }
+        if self.base_path.exists() {
+            out.push(self.base_path.clone());
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
