@@ -67,7 +67,7 @@ impl<C: Clock> Trigger for Interval<C> {
 
     fn reset(&mut self) {
         // Use observed time if present to maintain consistency with observation.
-        let now = self.observed.unwrap_or_else(|| self.clock.now());
+        let now = self.observed.take().unwrap_or_else(|| self.clock.now());
         self.last = Some(now);
     }
 

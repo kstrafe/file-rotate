@@ -62,7 +62,7 @@ impl Trigger for Delimiter {
     }
 
     fn observe(&mut self, _bytes: &[u8]) -> Self::Meta {
-        ()
+        // No metadata
     }
 }
 

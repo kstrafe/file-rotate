@@ -125,7 +125,7 @@ impl Rotator for DatedSuffix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use std::io::Write;
 
     #[test]
     fn rotates_to_dated_suffix_and_enforces_retention() {

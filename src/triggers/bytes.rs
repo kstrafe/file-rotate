@@ -51,7 +51,7 @@ impl Trigger for Bytes {
     }
 
     fn observe(&mut self, _bytes: &[u8]) -> Self::Meta {
-        ()
+        // No metadata
     }
 }
 

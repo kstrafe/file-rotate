@@ -20,7 +20,7 @@ impl Trigger for ResetSpy {
         self.0.set(self.0.get() + 1);
     }
     fn observe(&mut self, _bytes: &[u8]) -> Self::Meta {
-        ()
+        // No metadata
     }
 }
 

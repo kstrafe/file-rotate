@@ -82,7 +82,7 @@ impl Write for MemoryWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use std::io::Write;
 
     #[test]
     fn rotates_and_stores_buffers() {

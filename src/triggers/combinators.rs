@@ -69,21 +69,16 @@ mod tests {
     fn drive(mut trig: impl Trigger, mut buf: &[u8]) -> Vec<usize> {
         // Returns a list of consumed lengths for each rotation; calls reset between rotations.
         let mut consumed_list = Vec::new();
-        loop {
-            match trig.trigger(buf) {
-                Action::Rotate { consumed } => {
-                    consumed_list.push(consumed);
-                    trig.reset();
-                    // Avoid infinite loop on zero-consumed rotations
-                    if consumed == 0 {
-                        break;
-                    }
-                    buf = &buf[consumed..];
-                    if buf.is_empty() {
-                        break;
-                    }
-                }
-                Action::None => break,
+        while let Action::Rotate { consumed } = trig.trigger(buf) {
+            consumed_list.push(consumed);
+            trig.reset();
+            // Avoid infinite loop on zero-consumed rotations
+            if consumed == 0 {
+                break;
+            }
+            buf = &buf[consumed..];
+            if buf.is_empty() {
+                break;
             }
         }
         consumed_list
@@ -162,7 +157,6 @@ mod tests {
             fn reset(&mut self) {}
             fn observe(&mut self, bytes: &[u8]) -> Self::Meta {
                 self.seen += bytes.len();
-                ()
             }
         }
         let mut combo = TriggerCombinator::new(Probe { seen: 0 }, Probe { seen: 0 });

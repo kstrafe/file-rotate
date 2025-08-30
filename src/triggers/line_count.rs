@@ -10,6 +10,12 @@ pub struct LineCount {
     current: usize,
 }
 
+impl Default for LineCount {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LineCount {
     /// Create a new `LineCount` trigger with zero limit (must be set via `limit`).
     pub fn new() -> Self {
@@ -58,7 +64,7 @@ impl Trigger for LineCount {
     }
 
     fn observe(&mut self, _bytes: &[u8]) -> Self::Meta {
-        ()
+        // No metadata
     }
 }
 

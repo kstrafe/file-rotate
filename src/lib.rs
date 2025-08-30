@@ -117,6 +117,10 @@ use std::io::{self, Write};
 #[cfg(test)]
 pub mod test_support;
 
+/// Type alias for a per-line modifier closure that can write directly to the
+/// output writer based on trigger metadata. Writer comes first for ergonomic chaining.
+type LineModifier<M> = Box<dyn FnMut(&mut dyn Write, &M) -> io::Result<()>>;
+
 /// Handles *when* to rotate.
 pub trait Trigger {
     /// Additional metadata that can be exposed by a trigger for use by a modifier.
@@ -162,9 +166,9 @@ where
     writer: Option<R::Writer>,
     rotator: R,
     trigger: T,
-    // Optional modifier: when present, each written line is prefixed (or otherwise
-    // modified) using bytes produced by this closure based on trigger metadata.
-    modifier: Option<Box<dyn FnMut(&T::Meta) -> Vec<u8>>>,
+    // Optional modifier: when present, at the start of each line we invoke
+    // this closure to write a prefix or otherwise modify output directly.
+    modifier: Option<LineModifier<T::Meta>>,
     // Tracks whether the next byte to be written is at the start of a line.
     at_line_start: bool,
 }
@@ -191,7 +195,7 @@ where
     pub fn with_modifier(
         mut rotator: R,
         trigger: T,
-        modifier: Box<dyn FnMut(&T::Meta) -> Vec<u8>>,
+        modifier: LineModifier<T::Meta>,
     ) -> io::Result<Self> {
         let writer = Some(rotator.initial()?);
         Ok(Self {
@@ -206,7 +210,7 @@ where
     fn write_with_modifier_to(
         writer: &mut R::Writer,
         data: &[u8],
-        modifier: &mut Option<Box<dyn FnMut(&T::Meta) -> Vec<u8>>>,
+        modifier: &mut Option<LineModifier<T::Meta>>,
         at_line_start: &mut bool,
         meta: &T::Meta,
     ) -> io::Result<()> {
@@ -219,8 +223,7 @@ where
                 let mut i = 0;
                 // If we are at the start of a line, write the prefix first.
                 if *at_line_start {
-                    let p = (modifier)(meta);
-                    writer.write_all(&p)?;
+                    (modifier)(writer, meta)?;
                     *at_line_start = false;
                 }
                 while i < data.len() {
@@ -230,8 +233,7 @@ where
                         i = end;
                         if i < data.len() {
                             // New line starts immediately; emit prefix for next line.
-                            let p = (modifier)(meta);
-                            writer.write_all(&p)?;
+                            (modifier)(writer, meta)?;
                             *at_line_start = false;
                         } else {
                             // Buffer ended exactly at a newline; next write is at line start.
@@ -485,9 +487,9 @@ mod tests {
         let mut fr = FileRotate::with_modifier(
             rotator,
             trigger,
-            Box::new(|meta: &(std::time::Duration, ())| {
+            Box::new(|w: &mut dyn Write, meta: &(std::time::Duration, ())| {
                 let (t, _) = meta;
-                format!("t={} ", t.as_secs()).into_bytes()
+                write!(w, "t={} ", t.as_secs())
             }),
         )
         .unwrap();

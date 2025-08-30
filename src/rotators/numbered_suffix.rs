@@ -93,7 +93,7 @@ impl Rotator for NumberedSuffix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write as _;
+    use std::io::Write;
 
     #[test]
     fn rotates_and_shifts_numbered_files() {
