@@ -339,7 +339,8 @@ pub mod triggers;
 // Re-export commonly used items at crate root for convenience/back-compat
 pub use rotators::{DatedSuffix, MemoryRotator, MemoryWriter, NumberedSuffix};
 pub use triggers::{
-    Bytes, Clock, Delimiter, Interval, LineCount, RealClock, TriggerCombinator, TriggerExt,
+    Bytes, Clock, Date, DateSpec, Delimiter, DomSet, DowMask, HourSet, Interval, LineCount,
+    MinuteSet, MonthSet, RealClock, TriggerCombinator, TriggerExt,
 };
 
 #[cfg(test)]

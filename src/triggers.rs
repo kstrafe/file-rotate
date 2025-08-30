@@ -9,12 +9,14 @@
 //! combinator, both triggers are reset whenever a rotation occurs.
 pub mod bytes;
 pub mod combinators;
+pub mod date;
 pub mod delimiter;
 pub mod interval;
 pub mod line_count;
 
 pub use bytes::Bytes;
 pub use combinators::{TriggerCombinator, TriggerExt};
+pub use date::{Date, DateSpec, DomSet, DowMask, HourSet, MinuteSet, MonthSet};
 pub use delimiter::Delimiter;
 pub use interval::{Clock, Interval, RealClock};
 pub use line_count::LineCount;

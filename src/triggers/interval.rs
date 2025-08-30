@@ -66,9 +66,13 @@ impl<C: Clock> Trigger for Interval<C> {
     }
 
     fn reset(&mut self) {
-        // Use observed time if present to maintain consistency with observation.
-        let now = self.observed.take().unwrap_or_else(|| self.clock.now());
-        self.last = Some(now);
+        // Advance deterministically: if initialized, move the reference forward by one period
+        // without sampling the clock. If uninitialized, fall back to observed/now.
+        let new_last = match self.last {
+            Some(last) => last + self.period,
+            None => self.observed.take().unwrap_or_else(|| self.clock.now()),
+        };
+        self.last = Some(new_last);
     }
 
     fn observe(&mut self, _bytes: &[u8]) -> Self::Meta {
@@ -133,5 +137,36 @@ mod tests {
         t.clock.set(6);
         // Trigger should use observed (4), so not rotate yet because 4-0 < 5
         assert!(matches!(t.trigger(b"x"), Action::None));
+    }
+
+    #[test]
+    fn reset_adds_period_and_is_deterministic() {
+        // period = 5
+        let clock = MockClock::new();
+        let mut t = Interval::new(clock, Duration::from_secs(5));
+        // Initialize at t=0
+        assert!(matches!(t.trigger(b"init"), Action::None));
+
+        // Reset should advance last to 5 without sampling the clock
+        t.reset();
+        t.clock.set(4);
+        assert!(matches!(t.trigger(b"no"), Action::None)); // 4 - 5 < 5
+                                                           // At boundary (now == last), should NOT rotate yet
+        t.clock.set(5);
+        assert!(matches!(t.trigger(b"boundary"), Action::None));
+        // After a full additional period (now == 10), should rotate
+        t.clock.set(10);
+        match t.trigger(b"yes") {
+            Action::Rotate { consumed } => assert_eq!(consumed, 0),
+            _ => panic!("expected rotate at t=10 after reset"),
+        }
+
+        // Jump far ahead; reset should NOT anchor to now, so immediate rotate is possible
+        t.clock.set(100);
+        t.reset(); // last becomes previous_last + 5, not 100
+        match t.trigger(b"immediate") {
+            Action::Rotate { .. } => {}
+            _ => panic!("expected immediate rotate since now - last >= period"),
+        }
     }
 }
