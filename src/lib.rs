@@ -142,6 +142,8 @@
 //! their timestamp ([FileLimit::Age]), or just maximum number of files ([FileLimit::MaxFiles]).
 //!
 //! ```
+//! # #[cfg(feature = "timestamp")]
+//! # {
 //! use file_rotate::{FileRotate, ContentLimit, suffix::{AppendTimestamp, FileLimit},
 //! compression::Compression};
 //! use std::{fs, io::Write};
@@ -174,13 +176,17 @@
 //! assert_eq!("B", fs::read_to_string(&log.log_paths()[0]).unwrap());
 //! assert_eq!("C", fs::read_to_string(&log.log_paths()[1]).unwrap());
 //! assert_eq!("D", fs::read_to_string(&log_path).unwrap());
+//! # }
 //! ```
 //!
 //! If you use timestamps as suffix, you can also configure files to be removed as they reach a
 //! certain age. For example:
 //! ```rust
+//! # #[cfg(feature = "timestamp")]
+//! # {
 //! use file_rotate::suffix::{AppendTimestamp, FileLimit};
 //! AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1)));
+//! # }
 //! ```
 //!
 //! # Compression #
@@ -225,12 +231,15 @@
 //! The following code scans the current directory and recognizes log files based on their file name:
 //!
 //! ```
+//! # #[cfg(feature = "timestamp")]
+//! # {
 //! # use file_rotate::{suffix::*, *};
 //! # use std::path::Path;
 //! println!(
 //!     "{:#?}",
 //!     AppendTimestamp::default(FileLimit::MaxFiles(4)).scan_suffixes(Path::new("./log"))
 //! );
+//! # }
 //! ```
 //!
 //! [SuffixScheme::scan_suffixes] also takes into account the possibility of the extra `.gz` suffix, and
@@ -286,6 +295,7 @@
     unused_qualifications
 )]
 
+#[cfg(feature = "timestamp")]
 use chrono::prelude::*;
 use compression::*;
 use std::io::{BufRead, BufReader};
@@ -300,13 +310,14 @@ use suffix::*;
 
 pub mod compression;
 pub mod suffix;
-#[cfg(test)]
+#[cfg(all(test, feature = "timestamp"))]
 mod tests;
 
 // ---
 
 /// At which frequency to rotate the file.
 #[derive(Clone, Copy, Debug)]
+#[cfg(feature = "timestamp")]
 pub enum TimeFrequency {
     /// Rotate every hour.
     Hourly,
@@ -328,6 +339,7 @@ pub enum ContentLimit {
     /// Cut the log file at line breaks.
     Lines(usize),
     /// Cut the log at time interval.
+    #[cfg(feature = "timestamp")]
     Time(TimeFrequency),
     /// Cut the log file after surpassing size in bytes (but having written a complete buffer from a write call.)
     BytesSurpassed(usize),
@@ -377,6 +389,7 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
+    #[cfg(feature = "timestamp")]
     modified: Option<DateTime<Local>>,
     content_limit: ContentLimit,
     count: usize,
@@ -414,6 +427,7 @@ impl<S: SuffixScheme> FileRotate<S> {
             ContentLimit::Lines(lines) => {
                 assert!(lines > 0);
             }
+            #[cfg(feature = "timestamp")]
             ContentLimit::Time(_) => {}
             ContentLimit::BytesSurpassed(bytes) => {
                 assert!(bytes > 0);
@@ -426,6 +440,7 @@ impl<S: SuffixScheme> FileRotate<S> {
 
         let mut s = Self {
             file: None,
+            #[cfg(feature = "timestamp")]
             modified: None,
             basepath,
             content_limit,
@@ -465,6 +480,7 @@ impl<S: SuffixScheme> FileRotate<S> {
                         ContentLimit::Lines(_) => {
                             self.count = BufReader::new(file).lines().count();
                         }
+                        #[cfg(feature = "timestamp")]
                         ContentLimit::Time(_) => {
                             self.modified = mtime(file);
                         }
@@ -641,6 +657,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                     file.write_all(buf)?;
                 }
             }
+            #[cfg(feature = "timestamp")]
             ContentLimit::Time(time) => {
                 let local: DateTime<Local> = now();
 
@@ -731,6 +748,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
 
 /// Get modification time, in non test case.
 #[cfg(not(test))]
+#[cfg(feature = "timestamp")]
 fn mtime(file: &File) -> Option<DateTime<Local>> {
     if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
         return Some(time.into());
@@ -741,18 +759,19 @@ fn mtime(file: &File) -> Option<DateTime<Local>> {
 
 /// Get modification time, in test case.
 #[cfg(test)]
+#[cfg(feature = "timestamp")]
 fn mtime(_: &File) -> Option<DateTime<Local>> {
     Some(now())
 }
 
 /// Get system time, in non test case.
-#[cfg(not(test))]
+#[cfg(all(not(test), feature = "timestamp"))]
 fn now() -> DateTime<Local> {
     Local::now()
 }
 
 /// Get mocked system time, in test case.
-#[cfg(test)]
+#[cfg(all(test, feature = "timestamp"))]
 pub mod mock_time {
     use super::*;
     use std::cell::RefCell;
@@ -772,5 +791,5 @@ pub mod mock_time {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "timestamp"))]
 pub use mock_time::now;

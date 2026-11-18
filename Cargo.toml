@@ -10,7 +10,7 @@ keywords= ["log", "rotate", "logrotate"]
 license = "MIT"
 
 [dependencies]
-chrono = { version = "0.4.20", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.20", default-features = false, features = ["clock"], optional = true }
 flate2 = "1.0"
 
 [dev-dependencies]
@@ -18,3 +18,13 @@ filetime = "0.2"
 quickcheck = "0.9.2"
 quickcheck_macros = "0.9.1"
 tempfile = "3"
+
+[features]
+default = ["timestamp"]
+# Time-based suffix schemes (AppendTimestamp) and time-based rotation triggers
+# (ContentLimit::Time) need `chrono`. Count/size/line-based rotation works without it.
+timestamp = ["dep:chrono"]
+
+[[example]]
+name = "rotate_by_date"
+required-features = ["timestamp"]
