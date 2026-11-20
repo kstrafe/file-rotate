@@ -180,7 +180,7 @@
 //! certain age. For example:
 //! ```rust
 //! use file_rotate::suffix::{AppendTimestamp, FileLimit};
-//! AppendTimestamp::default(FileLimit::Age(chrono::Duration::weeks(1)));
+//! AppendTimestamp::default(FileLimit::Age(std::time::Duration::from_secs(7 * 24 * 3600)));
 //! ```
 //!
 //! # Compression #
@@ -286,7 +286,7 @@
     unused_qualifications
 )]
 
-use chrono::prelude::*;
+use jiff::ZonedDateTime;
 use compression::*;
 use std::io::{BufRead, BufReader};
 use std::{
@@ -377,7 +377,7 @@ impl<Repr: Representation> PartialOrd for SuffixInfo<Repr> {
 pub struct FileRotate<S: SuffixScheme> {
     basepath: PathBuf,
     file: Option<File>,
-    modified: Option<DateTime<Local>>,
+    modified: Option<ZonedDateTime>,
     content_limit: ContentLimit,
     count: usize,
     compression: Compression,
@@ -642,9 +642,9 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                 }
             }
             ContentLimit::Time(time) => {
-                let local: DateTime<Local> = now();
+                let local: ZonedDateTime = now();
 
-                if let Some(modified) = self.modified {
+                if let Some(modified) = &self.modified {
                     match time {
                         TimeFrequency::Hourly => {
                             if local.hour() != modified.hour()
@@ -661,7 +661,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
                             }
                         }
                         TimeFrequency::Weekly => {
-                            if local.iso_week().week() != modified.iso_week().week()
+                            if local.iso_week_date().week() != modified.iso_week_date().week()
                                 || local.year() > modified.year()
                             {
                                 self.rotate()?;
@@ -731,9 +731,9 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
 
 /// Get modification time, in non test case.
 #[cfg(not(test))]
-fn mtime(file: &File) -> Option<DateTime<Local>> {
+fn mtime(file: &File) -> Option<ZonedDateTime> {
     if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
-        return Some(time.into());
+        return std::convert::TryFrom::try_from(time).ok();
     }
 
     None
@@ -741,14 +741,14 @@ fn mtime(file: &File) -> Option<DateTime<Local>> {
 
 /// Get modification time, in test case.
 #[cfg(test)]
-fn mtime(_: &File) -> Option<DateTime<Local>> {
+fn mtime(_: &File) -> Option<ZonedDateTime> {
     Some(now())
 }
 
 /// Get system time, in non test case.
 #[cfg(not(test))]
-fn now() -> DateTime<Local> {
-    Local::now()
+fn now() -> ZonedDateTime {
+    ZonedDateTime::now()
 }
 
 /// Get mocked system time, in test case.
@@ -758,16 +758,16 @@ pub mod mock_time {
     use std::cell::RefCell;
 
     thread_local! {
-        static MOCK_TIME: RefCell<Option<DateTime<Local>>> = RefCell::new(None);
+        static MOCK_TIME: RefCell<Option<ZonedDateTime>> = RefCell::new(None);
     }
 
     /// Get current _mocked_ time
-    pub fn now() -> DateTime<Local> {
-        MOCK_TIME.with(|cell| cell.borrow().as_ref().cloned().unwrap_or_else(Local::now))
+    pub fn now() -> ZonedDateTime {
+        MOCK_TIME.with(|cell| cell.borrow().as_ref().cloned().unwrap_or_else(ZonedDateTime::now))
     }
 
     /// Set mocked time
-    pub fn set_mock_time(time: DateTime<Local>) {
+    pub fn set_mock_time(time: ZonedDateTime) {
         MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
     }
 }
