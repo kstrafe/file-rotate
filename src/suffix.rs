@@ -5,7 +5,7 @@
 //!
 use super::now;
 use crate::SuffixInfo;
-use chrono::{format::ParseErrorKind, offset::Local, Duration, NaiveDateTime};
+use std::time::Duration;
 use std::{
     cmp::Ordering,
     collections::BTreeSet,
@@ -232,15 +232,15 @@ impl SuffixScheme for AppendTimestamp {
 
             match self.date_from {
                 DateFrom::DateYesterday => {
-                    now = now - Duration::days(1);
+                    now = now - Duration::from_secs(24 * 3600);
                 }
                 DateFrom::DateHourAgo => {
-                    now = now - Duration::hours(1);
+                    now = now - Duration::from_secs(3600);
                 }
                 _ => {}
             };
 
-            let fmt_now = now.format(self.format).to_string();
+            let fmt_now = now.strftime(self.format).to_string();
 
             let number = if let Some(newest_suffix) = newest_suffix {
                 if newest_suffix.timestamp == fmt_now {
@@ -274,10 +274,7 @@ impl SuffixScheme for AppendTimestamp {
         } else {
             (suffix, None)
         };
-        let success = match NaiveDateTime::parse_from_str(timestamp_str, self.format) {
-            Ok(_) => true,
-            Err(e) => e.kind() == ParseErrorKind::NotEnough,
-        };
+        let success = jiff::fmt::strtime::parse(self.format, timestamp_str).is_ok();
         if success {
             Some(TimestampSuffix {
                 timestamp: timestamp_str.to_string(),
@@ -291,7 +288,7 @@ impl SuffixScheme for AppendTimestamp {
         match self.file_limit {
             FileLimit::MaxFiles(max_files) => file_number >= max_files,
             FileLimit::Age(age) => {
-                let old_timestamp = (Local::now() - age).format(self.format).to_string();
+                let old_timestamp = (jiff::ZonedDateTime::now() - age).strftime(self.format).to_string();
                 suffix.timestamp < old_timestamp
             }
             FileLimit::Unlimited => false,
@@ -340,7 +337,7 @@ mod test {
     fn timestamp_scan_suffixes_base_paths() {
         let working_dir = TempDir::new().unwrap();
         let working_dir = working_dir.path().join("dir");
-        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::weeks(1)));
+        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::from_secs(7 * 24 * 3600)));
 
         // Test `scan_suffixes` for different possible paths given to it
         // (it used to have a bug taking e.g. "log".parent() --> panic)
