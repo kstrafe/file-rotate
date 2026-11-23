@@ -398,12 +398,12 @@ fn manual_rotation() {
 }
 
 #[quickcheck_macros::quickcheck]
-fn arbitrary_lines(count: usize) {
+fn arbitrary_lines(count: u8) {
     let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
-    let count = count.max(1);
+    let count = usize::from(count.max(1));
     let mut log = FileRotate::new(
         &log_path,
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
@@ -423,12 +423,12 @@ fn arbitrary_lines(count: usize) {
 }
 
 #[quickcheck_macros::quickcheck]
-fn arbitrary_bytes(count: usize) {
+fn arbitrary_bytes(count: u8) {
     let tmp_dir = TempDir::new().unwrap();
     let dir = tmp_dir.path();
     let log_path = dir.join("log");
 
-    let count = count.max(1);
+    let count = usize::from(count.max(1));
     let mut log = FileRotate::new(
         &log_path,
         AppendTimestamp::default(FileLimit::MaxFiles(100)),
