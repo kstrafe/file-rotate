@@ -87,7 +87,7 @@ pub trait SuffixScheme {
             if !filename.starts_with(&*filename_prefix) {
                 continue;
             }
-            let (filename, compressed) = prepare_filename(&*filename);
+            let (filename, compressed) = prepare_filename(&filename);
             let suffix_str = filename.strip_prefix(&format!("{}.", filename_prefix));
             if let Some(suffix) = suffix_str.and_then(|s| self.parse(s)) {
                 suffixes.insert(SuffixInfo { suffix, compressed });
@@ -232,10 +232,10 @@ impl SuffixScheme for AppendTimestamp {
 
             match self.date_from {
                 DateFrom::DateYesterday => {
-                    now = now - Duration::from_secs(24 * 3600);
+                    now -= Duration::from_secs(24 * 3600);
                 }
                 DateFrom::DateHourAgo => {
-                    now = now - Duration::from_secs(3600);
+                    now -= Duration::from_secs(3600);
                 }
                 _ => {}
             };
@@ -287,10 +287,11 @@ impl SuffixScheme for AppendTimestamp {
     fn too_old(&self, suffix: &TimestampSuffix, file_number: usize) -> bool {
         match self.file_limit {
             FileLimit::MaxFiles(max_files) => file_number >= max_files,
-            FileLimit::Age(age) => {
-                let old_timestamp = (jiff::ZonedDateTime::now() - age).strftime(self.format).to_string();
-                suffix.timestamp < old_timestamp
-            }
+            FileLimit::Age(age) => match jiff::ZonedDateTime::now().checked_sub(age) {
+                Ok(cutoff) => suffix.timestamp < cutoff.strftime(self.format).to_string(),
+                // Cutoff is before the earliest representable time, so nothing is too old
+                Err(_) => false,
+            },
             FileLimit::Unlimited => false,
         }
     }
@@ -334,10 +335,21 @@ mod test {
     }
 
     #[test]
+    fn timestamp_too_old_huge_age_does_not_panic() {
+        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::MAX));
+        let suffix = TimestampSuffix {
+            timestamp: "20200825T151133".to_string(),
+            number: None,
+        };
+        assert!(!suffix_scheme.too_old(&suffix, 0));
+    }
+
+    #[test]
     fn timestamp_scan_suffixes_base_paths() {
         let working_dir = TempDir::new().unwrap();
         let working_dir = working_dir.path().join("dir");
-        let suffix_scheme = AppendTimestamp::default(FileLimit::Age(Duration::from_secs(7 * 24 * 3600)));
+        let suffix_scheme =
+            AppendTimestamp::default(FileLimit::Age(Duration::from_secs(7 * 24 * 3600)));
 
         // Test `scan_suffixes` for different possible paths given to it
         // (it used to have a bug taking e.g. "log".parent() --> panic)
@@ -355,7 +367,7 @@ mod test {
             std::env::set_current_dir(&working_dir).unwrap();
 
             // Need to create the log file in order to canonicalize it and then get the parent
-            File::create(working_dir.join(&relative_path)).unwrap();
+            File::create(working_dir.join(relative_path)).unwrap();
             let canonicalized = relative_path.canonicalize().unwrap();
             let relative_dir = canonicalized.parent().unwrap();
 

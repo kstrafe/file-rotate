@@ -9,7 +9,7 @@ Look to the [docs](https://docs.rs/file-rotate/latest/file_rotate/index.html) fo
 * Getting a list of log files
 
 Limitations / known issues:
-* `file-rotate` assumes that no other process or user moves files around in the logging directory, but we want to find a way to [support this](https://github.com/BourgondAries/file-rotate/issues/17)
+* `file-rotate` assumes that no other process or user moves files around in the logging directory, but we want to find a way to [support this](https://github.com/kstrafe/file-rotate/issues/17)
 
 Following are some supplementary examples to get started.
 
@@ -89,7 +89,7 @@ So it almost works perfectly with `cat logs/*`, except that `log` is smaller (le
 
 This project is licensed under the [MIT license].
 
-[MIT license]: https://github.com/BourgondAries/file-rotate/blob/master/LICENSE
+[MIT license]: https://github.com/kstrafe/file-rotate/blob/master/LICENSE
 
 ### Contribution
 

@@ -23,7 +23,7 @@ pub(crate) fn compress(path: &Path) -> io::Result<()> {
     let dest_file = OpenOptions::new()
         .write(true)
         .create(true)
-        .append(false)
+        .truncate(true)
         .open(&dest_path)?;
 
     assert!(path.exists());

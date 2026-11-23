@@ -286,8 +286,8 @@
     unused_qualifications
 )]
 
-use jiff::ZonedDateTime;
 use compression::*;
+use jiff::ZonedDateTime;
 use std::io::{BufRead, BufReader};
 use std::{
     cmp::Ordering,
@@ -443,7 +443,7 @@ impl<S: SuffixScheme> FileRotate<S> {
     fn ensure_log_directory_exists(&mut self) {
         let path = self.basepath.parent().unwrap();
         if !path.exists() {
-            let _ = fs::create_dir_all(path).expect("create dir");
+            fs::create_dir_all(path).expect("create dir");
             self.scan_suffixes();
         }
         if !self.basepath.exists() || self.file.is_none() {
@@ -733,7 +733,7 @@ impl<S: SuffixScheme> Write for FileRotate<S> {
 #[cfg(not(test))]
 fn mtime(file: &File) -> Option<ZonedDateTime> {
     if let Ok(time) = file.metadata().and_then(|metadata| metadata.modified()) {
-        return std::convert::TryFrom::try_from(time).ok();
+        return ZonedDateTime::try_from(time).ok();
     }
 
     None
@@ -744,6 +744,9 @@ fn mtime(file: &File) -> Option<ZonedDateTime> {
 fn mtime(_: &File) -> Option<ZonedDateTime> {
     Some(now())
 }
+
+#[cfg(test)]
+pub use mock_time::now;
 
 /// Get system time, in non test case.
 #[cfg(not(test))]
@@ -758,12 +761,17 @@ pub mod mock_time {
     use std::cell::RefCell;
 
     thread_local! {
-        static MOCK_TIME: RefCell<Option<ZonedDateTime>> = RefCell::new(None);
+        static MOCK_TIME: RefCell<Option<ZonedDateTime>> = const { RefCell::new(None) };
     }
 
     /// Get current _mocked_ time
     pub fn now() -> ZonedDateTime {
-        MOCK_TIME.with(|cell| cell.borrow().as_ref().cloned().unwrap_or_else(ZonedDateTime::now))
+        MOCK_TIME.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(ZonedDateTime::now)
+        })
     }
 
     /// Set mocked time
@@ -771,6 +779,3 @@ pub mod mock_time {
         MOCK_TIME.with(|cell| *cell.borrow_mut() = Some(time));
     }
 }
-
-#[cfg(test)]
-pub use mock_time::now;

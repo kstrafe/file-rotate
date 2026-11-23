@@ -72,7 +72,9 @@ fn timestamp_max_age_deletion() {
     let log_path = dir.join("log");
 
     // One recent file:
-    let recent_file = ZonedDateTime::now().strftime("log.%Y%m%dT%H%M%S").to_string();
+    let recent_file = ZonedDateTime::now()
+        .strftime("log.%Y%m%dT%H%M%S")
+        .to_string();
     File::create(dir.join(&recent_file)).unwrap();
     // Two very old files:
     File::create(dir.join("log.20200825T151133")).unwrap();
@@ -80,7 +82,9 @@ fn timestamp_max_age_deletion() {
 
     let mut log = FileRotate::new(
         &*log_path.to_string_lossy(),
-        AppendTimestamp::default(FileLimit::Age(std::time::Duration::from_secs(7 * 24 * 3600))),
+        AppendTimestamp::default(FileLimit::Age(std::time::Duration::from_secs(
+            7 * 24 * 3600,
+        ))),
         ContentLimit::Lines(1),
         Compression::None,
         None,
@@ -570,7 +574,10 @@ fn test_panic() {
 fn get_fake_date_time(date_time: &str) -> ZonedDateTime {
     let date_obj = date_time.parse::<jiff::civil::DateTime>();
 
-    date_obj.unwrap().to_zoned_datetime(jiff::tz::TimeZone::system()).unwrap()
+    date_obj
+        .unwrap()
+        .to_zoned_datetime(jiff::tz::TimeZone::system())
+        .unwrap()
 }
 
 fn test_time_frequency(
@@ -603,7 +610,7 @@ fn test_time_frequency(
 
     filetime::set_file_mtime(
         log_path,
-        filetime::FileTime::from_system_time(std::convert::TryFrom::try_from(old_time).unwrap()),
+        filetime::FileTime::from_system_time(std::time::SystemTime::try_from(old_time).unwrap()),
     )
     .unwrap();
 

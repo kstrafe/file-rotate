@@ -1,7 +1,7 @@
 use file_rotate::{
+    ContentLimit, FileRotate, TimeFrequency,
     compression::Compression,
     suffix::{AppendTimestamp, DateFrom, FileLimit},
-    ContentLimit, FileRotate, TimeFrequency,
 };
 use std::io::Write;
 

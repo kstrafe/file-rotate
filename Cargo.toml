@@ -1,8 +1,9 @@
 [package]
 name = "file-rotate"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Kevin Robert Stravers <kevin@stravers.net>", "Erlend Langseth <3rlendhl@gmail.com>"]
-edition = "2018"
+edition = "2024"
+rust-version = "1.85"
 description = "Log rotation for files"
 homepage = "https://github.com/kstrafe/file-rotate"
 repository = "https://github.com/kstrafe/file-rotate"
@@ -11,7 +12,7 @@ license = "MIT"
 
 [dependencies]
 jiff = "1.0.1"
-flate2 = "1.0"
+flate2 = "1.1"
 
 [dev-dependencies]
 filetime = "0.2"

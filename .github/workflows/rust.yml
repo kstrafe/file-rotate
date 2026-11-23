@@ -5,17 +5,25 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  schedule:
+    # Monthly, to catch breakage from new Rust releases or dependencies
+    - cron: '0 6 1 * *'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - name: Check
-      run: cargo check
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt, clippy
+    - name: Format
+      run: cargo fmt --check
+    - name: Clippy
+      run: cargo clippy --all-targets -- -D warnings
   test:
     runs-on: '${{ matrix.os }}'
     strategy:
@@ -23,8 +31,16 @@ jobs:
         include:
           - os: macos-latest
           - os: ubuntu-latest
-          - os: windows-latest  
+          - os: windows-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Test
+      run: cargo test
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@1.85
     - name: Test
       run: cargo test
