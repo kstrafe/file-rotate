@@ -1,4 +1,4 @@
-use super::{suffix::*, *};
+use super::*;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
@@ -608,11 +608,12 @@ fn test_time_frequency(
     writeln!(log, "a").unwrap();
     log.flush().unwrap();
 
-    filetime::set_file_mtime(
-        log_path,
-        filetime::FileTime::from_system_time(std::time::SystemTime::try_from(old_time).unwrap()),
-    )
-    .unwrap();
+    File::options()
+        .write(true)
+        .open(log_path)
+        .unwrap()
+        .set_modified(std::time::SystemTime::try_from(old_time).unwrap())
+        .unwrap();
 
     mock_time::set_mock_time(second_old_time);
 
